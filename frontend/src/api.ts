@@ -66,3 +66,20 @@ export function preferredLink(p: Paper): string {
 export function statusLabel(status: Paper["read_status"]) {
   return { unread: "未读", reading: "阅读中", finished: "已读" }[status];
 }
+export function conversionLabel(job: Job) {
+  if (job.status === "running") {
+    return (
+      {
+        preparing: "准备转换…",
+        converting: "正在生成 HTML…",
+        publishing: "正在保存 HTML…",
+      }[job.progress_stage] || "正在转换…"
+    );
+  }
+  return {
+    queued: "等待转换",
+    succeeded: "HTML 已生成",
+    failed: "转换失败",
+    canceled: "转换已取消",
+  }[job.status];
+}

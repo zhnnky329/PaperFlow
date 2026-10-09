@@ -8,7 +8,13 @@ import {
 } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
-import { api, type Paper, type Position, type Settings } from "./api";
+import {
+  api,
+  conversionLabel,
+  type Paper,
+  type Position,
+  type Settings,
+} from "./api";
 import { Button } from "./components/ui/button";
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -301,7 +307,7 @@ export function PdfReader() {
           </Button>
         )}
         {doc && (
-          <>
+          <div className="reader-controls" aria-label="PDF 阅读控制">
             <Button aria-label="上一页" onClick={() => navigate(page - 1)}>
               ‹
             </Button>
@@ -328,7 +334,7 @@ export function PdfReader() {
             <Button onClick={() => zoom((innerWidth - 80) / 595)}>
               适配宽度
             </Button>
-          </>
+          </div>
         )}
       </header>
       {error && (
@@ -337,10 +343,9 @@ export function PdfReader() {
           <Button onClick={() => location.reload()}>刷新重试</Button>
         </div>
       )}
-      {paper?.conversion && (
+      {paper?.conversion && paper.conversion.status !== "succeeded" && (
         <div className="conversion-strip">
-          转换：{paper.conversion.status} / {paper.conversion.progress_stage}{" "}
-          {paper.conversion.error_message}
+          {conversionLabel(paper.conversion)} {paper.conversion.error_message}
         </div>
       )}
       {paper && !paper.has_pdf ? (

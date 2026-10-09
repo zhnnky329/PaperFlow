@@ -119,6 +119,10 @@ make e2e                 # 先 build，生成 35 页测试 PDF 到 /tmp，使用
 
 fake CLI 仅用于自动化队列故障测试，不作为 Marker 品质证据。Read Frog/DeepSeek 需用户 Chrome 人工验证，不能用 headless Chrome 测试冒充。没有私人 PDF、模型、密钥或 Library 提交到 Git。10 篇质量已实际抽查，不是逐页逐式校对；首次全新机器安装仍待执行。
 
+## 界面验证
+
+Library、导入弹窗、设置和阅读器支持系统字体、浅/深色、即时按压反馈及减少动态效果；窄屏保留 PDF/HTML 和阅读状态操作。真实 Chrome 截图与可复现命令见 [UI 验证记录](docs/validation/ui-polish.md)。`scripts/capture_ui.mjs` 应仅对隔离的真实论文验证库运行，会保存该库的阅读进度。
+
 ## Known limitations
 
 - V1 发布阻断：Read Frog 人工双语与完整双语关服重启验收；未经执行不能宣称翻译完成。

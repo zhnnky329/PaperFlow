@@ -33,3 +33,10 @@ Starlette 的最外层异常处理会重新抛出异常，可能使 Uvicorn 输�
 
 ## 2026-10-09 · 十篇质量 Gate 补齐
 真实执行8个不同PDF的Marker任务和2个官方HTML导入；8本地Chrome页面77图片/165公式/60表格无坏图/解析/脚本错误、目录进度PASS。实际PDF渲染对照与截图审查保守计8/10可用，Attention公式拆行、ResNet宽表/识别瑕疵不计质量PASS，保留PDF。修复表格cell逐字换行，未用LLM重写整篇HTML。该抽查关闭样本数量门槛，不代表逐式数学校对或Read Frog已验收；详情quality-readability.md。
+
+## 2026-10-09 · 阅读工作台 UI 优化
+用户明确要求按 frontend-design 和 apple-design 优化高级感。采用本机系统字体、纸白/石墨灰结构面、单一靛蓝强调色；侧栏与论文工作区分层，标题 32px，列表以论文标题为中心，空态采用 CSS 纸页形态。仅顶栏/弹窗背景使用有意义的半透明材料，按钮在按下时即时反馈；不添加动画库、网络字体或装饰图片。支持减少动态效果/透明度/增强对比度偏好，强制颜色模式保留原生 checkbox。
+
+保留原有 API、PDF.js 文本层与 HTML 普通 DOM；隐藏重复的成功转换状态，中文显示进行中/失败状态；小屏保留 PDF/HTML/阅读状态操作；无结果提供清除筛选。文件选择改为可见按钮调用隐藏原生 input，首轮 Chrome E2E 暴露同名控件后用 hidden 修正辅助技术树，并实际通过 filechooser 验证。
+
+最终证据：make build/lint/typecheck PASS；make test 在沙箱内 29 passed/1 skipped，具备进程枚举权限后 30 passed（1 个依赖弃用警告），Vitest 3 passed；make e2e 2 passed/6.3s。真实公开论文库的浅/深色、导入、390px、PDF/HTML 页面截图与报告见 docs/validation/ui-polish.md。Read Frog 扩展、macOS 系统辅助功能手动切换仍 NOT RUN，不把外观回归当翻译验收。

@@ -1,0 +1,20 @@
+{
+  "browser": "154.0.8037.98",
+  "origin": "http://127.0.0.1:8010",
+  "checks": [
+    "library desktop: no horizontal overflow",
+    "empty search clears filters and restores actual Library: PASS",
+    "import PDF/arXiv controls and Escape: PASS",
+    "library mobile: no horizontal overflow",
+    "mobile PDF/HTML/status actions visible: PASS",
+    "import mobile: no horizontal overflow",
+    "PDF desktop: no horizontal overflow",
+    "PDF.js rendered canvas and text: PASS",
+    "HTML desktop: no horizontal overflow",
+    "actual HTML formulas and images: PASS",
+    "HTML TOC navigation and progress restore: PASS",
+    "reduced motion disables HTML control transitions: PASS"
+  ],
+  "pageErrors": [],
+  "readFrog": "NOT RUN"
+}

@@ -17,6 +17,7 @@ import {
   api,
   preferredLink,
   statusLabel,
+  conversionLabel,
   type Paper,
   type Settings,
   type Label,
@@ -294,17 +295,20 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <SettingsIcon size={16} />
             Settings
           </Link>
-          <p>论文与阅读进度保存在本机</p>
         </div>
       </aside>
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <span className="breadcrumb">个人论文库</span>
             <h1>
               {heading}
               {!settingsPage && <span className="count">{total}</span>}
             </h1>
+            <p className="workspace-description">
+              {settingsPage
+                ? "让工作台适合你的阅读习惯。"
+                : "整理文献，继续阅读。"}
+            </p>
           </div>
           {!settingsPage && (
             <Button
@@ -568,7 +572,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               <div className="empty">正在读取本地 Library…</div>
             ) : papers.length === 0 ? (
               <div className="empty">
-                <div className="empty-icon">
+                <div className="empty-icon" aria-hidden="true">
                   <BookOpen size={32} />
                 </div>
                 <h2>
@@ -581,10 +585,24 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     ? "调整搜索词或筛选条件。"
                     : "拖入 PDF，或收藏 arXiv 链接。原文、分类与阅读进度都留在本机。"}
                 </p>
-                <Button variant="default" onClick={() => setAdd(true)}>
-                  <Plus size={15} />
-                  添加论文
-                </Button>
+                {query || status || tag || collection ? (
+                  <Button
+                    onClick={() => {
+                      setQuery("");
+                      setStatus("");
+                      setTag("");
+                      setCollection("");
+                      setPage(1);
+                    }}
+                  >
+                    清除筛选
+                  </Button>
+                ) : (
+                  <Button variant="default" onClick={() => setAdd(true)}>
+                    <Plus size={15} />
+                    添加论文
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="paper-list">
@@ -653,19 +671,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                           </Button>
                         )}
                       </div>
-                      {p.conversion && (
+                      {p.conversion && p.conversion.status !== "succeeded" && (
                         <div
                           className={
                             "job-state " +
                             (p.conversion.status === "failed" ? "failed" : "")
                           }
                         >
-                          <span>
-                            HTML {p.conversion.status}{" "}
-                            {["running", "queued"].includes(p.conversion.status)
-                              ? `· ${p.conversion.progress_stage}`
-                              : ""}
-                          </span>
+                          <span>{conversionLabel(p.conversion)}</span>
                           {p.conversion.error_message && (
                             <span>{p.conversion.error_message}</span>
                           )}
@@ -791,7 +804,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               </div>
             )}
             <footer className="workspace-footer">
-              <span>Local-first · SQLite</span>
+              <span>论文与阅读进度保存在本机</span>
               <span>
                 {config?.marker_available
                   ? "Marker 已就绪"
@@ -804,6 +817,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       {add && (
         <Modal
           title="Add Paper"
+          description="导入原文，留住每一次阅读。"
           close={() => {
             if (!busy) setAdd(false);
           }}
@@ -811,12 +825,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           <div className="tabs">
             <Button
               variant={tab === "pdf" ? "default" : "ghost"}
+              aria-pressed={tab === "pdf"}
               onClick={() => setTab("pdf")}
             >
               PDF File
             </Button>
             <Button
               variant={tab === "arxiv" ? "default" : "ghost"}
+              aria-pressed={tab === "arxiv"}
               onClick={() => setTab("arxiv")}
             >
               arXiv Link
@@ -836,6 +852,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               <p>支持多个 PDF。复制到本机数据目录，自动识别重复文件。</p>
               <input
                 ref={fileInput}
+                hidden
                 aria-label="选择 PDF 文件"
                 type="file"
                 accept="application/pdf,.pdf"
@@ -843,6 +860,13 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 disabled={busy}
                 onChange={(e) => uploadFiles(e.target.files)}
               />
+              <Button
+                variant="default"
+                disabled={busy}
+                onClick={() => fileInput.current?.click()}
+              >
+                {busy ? "正在导入…" : "选择 PDF 文件"}
+              </Button>
             </div>
           ) : (
             <form
@@ -862,7 +886,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 />
               </label>
               <p className="muted">
-                先保存条目，后台获取元信息；只有验证真实存在才提供官方 HTML。
+                支持论文链接或 ID。导入后自动获取标题、作者及可用的官方 HTML。
               </p>
               <Button variant="default" disabled={busy}>
                 {busy ? "保存中…" : "导入 arXiv"}

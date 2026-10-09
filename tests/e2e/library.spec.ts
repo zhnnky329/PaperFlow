@@ -6,9 +6,11 @@ test("real Library → upload → edit → PDF.js → progress → delete", asyn
   await page.goto("/");
   await expect(page.getByText("你的下一篇论文，从这里开始")).toBeVisible();
   await page.getByRole("button", { name: "Add Paper", exact: true }).click();
-  await page
-    .getByLabel("选择 PDF 文件")
-    .setInputFiles("/tmp/paperflow-e2e.pdf");
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: "选择 PDF 文件", exact: true }).click(),
+  ]);
+  await chooser.setFiles("/tmp/paperflow-e2e.pdf");
   await expect(page.getByRole("status")).toContainText("导入成功");
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(
