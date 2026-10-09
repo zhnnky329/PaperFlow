@@ -174,6 +174,7 @@ class Worker:
                 environment = {
                     k: v for k, v in os.environ.items() if "KEY" not in k.upper() and "TOKEN" not in k.upper()
                 }
+                environment.pop("SURYA_INFERENCE_URL", None)
                 environment["SURYA_INFERENCE_KEEP_ALIVE"] = "0"
                 environment["SURYA_INFERENCE_HOST"] = "127.0.0.1"
                 environment["SURYA_INFERENCE_PARALLEL"] = "1"

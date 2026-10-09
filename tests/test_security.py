@@ -12,6 +12,8 @@ from test_library import upload
         "https://arxiv.org@127.0.0.1/abs/1706.03762",
         "file:///etc/passwd",
         "https://arxiv.org:444/abs/1706.03762",
+        "https://arxiv.org:invalid/abs/1706.03762",
+        "https://[arxiv.org/abs/1706.03762",
         "../../etc/passwd",
     ],
 )
@@ -65,3 +67,18 @@ def test_html_asset_symlink_and_key_fields_blocked(client, pdf_bytes, config):
     original.unlink()
     original.symlink_to(outside)
     assert client.get("/api/v1/papers/" + paper["id"] + "/pdf").status_code == 403
+
+
+def test_unexpected_error_does_not_escape_or_log_secrets(client, pdf_bytes, monkeypatch, caplog):
+    def broken_ingest(*args, **kwargs):
+        raise RuntimeError("FAKE_PRIVATE_TEXT_AND_KEY /Users/private/paper.pdf")
+
+    monkeypatch.setattr("app.main.ingest", broken_ingest)
+    # TestClient's default raise_server_exceptions=True catches any re-raise.
+    response = client.post("/api/v1/papers/upload", files={"file": ("paper.pdf", pdf_bytes)})
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "exception=RuntimeError" in caplog.text
+    for private in ("FAKE_PRIVATE_TEXT_AND_KEY", "/Users/private"):
+        assert private not in response.text and private not in caplog.text

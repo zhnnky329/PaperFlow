@@ -129,7 +129,12 @@ def create_app(config=None):
             return event
 
         request._receive = bounded_receive
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            # Handle here so ServerErrorMiddleware cannot re-raise to Uvicorn,
+            # which would log an unfiltered exception message and traceback.
+            response = await unexpected(request, exc)
         if received > config.max_upload_mb * 1024 * 1024 + 1024 * 1024:
             response = JSONResponse({"error": {"code": "TOO_LARGE", "message": "请求超过上传限制"}}, 413)
         response.headers["X-Content-Type-Options"] = "nosniff"

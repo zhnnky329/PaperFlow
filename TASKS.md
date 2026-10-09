@@ -9,14 +9,14 @@
 
 | 阶段 | 当前状态 |
 |---|---|
-| M0 | CLI 与真实 fast 已跑；补充双栏样本；Read Frog 人工 NOT RUN |
+| M0 | CLI/双栏 FAST-LIO2/Attention 真 fast PASS；Read Frog 人工 NOT RUN，Gate 保留 |
 | M1 | 骨架/迁移/health/启动与构建已实现，验证 PASS |
-| M2 | Library/API/导入/去重/分类已实现，自动化 PASS，真实网络补测 |
-| M3 | PDF.js 真渲染；进度竞态已修复，浏览器回归中 |
-| M4 | 队列/缓存/取消/重试/孤儿恢复自动化 PASS，真实应用转换待测 |
-| M5 | HTML 读器及净化实现，插件与 10 篇 Gate 未完成 |
-| M6 | 配置/备份/文档/锁定依赖收口中 |
-| M7 | 回归进行中；存在发布阻断，未完成 V1 |
+| M2 | Library/API/导入/去重/分类 PASS；真实 arXiv 网络和 Chrome 官方新标签 PASS |
+| M3 | Chrome 真 PDF.js + 35 页、文本层、第 6 页及 110% 缩放恢复 PASS |
+| M4 | 真 API→Marker→净化发布→缓存→重启 PASS；队列故障/取消/重试/孤儿恢复 PASS |
+| M5 | 8篇真Marker/2篇官方HTML，10篇抽查8可用、2保留排版限制；Chrome图/公式/TOC/进度PASS，插件待人工 |
+| M6 | 配置/备份恢复/启动文档/依赖锁定/实际截图已完成；全新机器安装 NOT RUN |
+| M7 | lint/typecheck/Pytest 30/Vitest 3/Chrome E2E 2 PASS；发布 Gate 仍未关闭 |
 
 ## 全局完成定义（Definition of Done）
 

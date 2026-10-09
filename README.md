@@ -2,7 +2,7 @@
 
 macOS 上运行的本地论文 Library、PDF.js 阅读器与 Marker HTML 阅读器。React/TypeScript/Vite + FastAPI/SQLAlchemy/Alembic/SQLite；默认只监听 `127.0.0.1:8000`。不需要账户、Docker 或云数据库。
 
-**当前是可运行的开发版本，尚未完成 V1 发布验收。** 真实 Marker fast 已转换 Attention Is All You Need 与双栏 FAST-LIO2；真实 API→Marker→HTML→缓存→重启链路通过。Chrome Read Frog + 用户 DeepSeek 双语人工 Gate、10 篇至少 8 篇 HTML 质量 Gate 尚未完成。具体证据、真实截图和已知阻断见 [阶段记录](docs/validation/milestones.md)、[Marker/Read Frog](docs/validation/marker-readfrog.md) 和 [验收状态](docs/validation/acceptance.md)。
+**当前是可运行的开发版本，尚未完成 V1 发布验收。** 8 篇不同论文真实 Marker fast、API→HTML→缓存→重启链路通过。10 篇质量抽查有 8 篇可用（含2篇真实官方HTML），Attention/ResNet复杂排版保留PDF对照；见 [质量记录](docs/validation/quality-readability.md)。Chrome Read Frog + 用户 DeepSeek 双语人工 Gate 仍 NOT RUN。证据、真实截图和阻断见 [阶段记录](docs/validation/milestones.md)、[Marker/Read Frog](docs/validation/marker-readfrog.md) 和 [验收状态](docs/validation/acceptance.md)。
 
 ## 本机当前启动
 
@@ -107,18 +107,21 @@ make backup
 make lint
 make typecheck
 make test
+# 先停止已有 make serve/dev（E2E 独占 8000 端口）：
 make e2e                 # 先 build，生成 35 页测试 PDF 到 /tmp，使用隔离 headless Chrome
 # 机器需安装 Chrome；或在 playwright.config.ts 调整为已安装的 Chromium
 # 可选慢速真 Marker Gate（不调用翻译）：
 .venv/bin/python scripts/marker_gate.py --executable "/path/to/marker_single" --pdf "/path/to/paper.pdf" --output "/tmp/paperflow-gate"
 .venv/bin/python scripts/validate_real.py --pdf "/path/to/paper.pdf" --data-dir "/tmp/paperflow-real-test" --executable "/path/to/marker_single" --report "/tmp/report.json"
+# 较慢：8 个本地 Marker 任务 + 2 篇官方 HTML；仍需 PDF 对照阅读质量
+.venv/bin/python scripts/quality_gate.py --data-dir "/tmp/paperflow-quality-gate" --report "/tmp/quality-report.json"
 ```
 
-fake CLI 仅用于自动化队列故障测试，不作为 Marker 品质证据。Read Frog/DeepSeek 需用户 Chrome 人工验证，不能用 headless Chrome 测试冒充。没有私人 PDF、模型、密钥或 Library 提交到 Git。首次全新机器安装和 10 篇转换质量回归仍待执行。
+fake CLI 仅用于自动化队列故障测试，不作为 Marker 品质证据。Read Frog/DeepSeek 需用户 Chrome 人工验证，不能用 headless Chrome 测试冒充。没有私人 PDF、模型、密钥或 Library 提交到 Git。10 篇质量已实际抽查，不是逐页逐式校对；首次全新机器安装仍待执行。
 
 ## Known limitations
 
-- V1 发布阻断：Read Frog 人工双语验收、10 篇至少 8 篇 HTML 质量；未经确认不能宣称翻译完成。
+- V1 发布阻断：Read Frog 人工双语与完整双语关服重启验收；未经执行不能宣称翻译完成。
 - Marker 复杂公式/表格可能有结构缺陷；始终提供 PDF 对照，未承诺秒级转换或像素级还原。
 - 真实 arXiv 网络的 API/HTML 可能受地区/429/超时影响；失败保留条目并可重试，自动化网络用 mock 可重复验证。真实网络证据见验收报告。
 - PDF 受损/加密文件拒绝导入；当前不提供 PDF 全文搜索、批量分类或笔记（P1）。

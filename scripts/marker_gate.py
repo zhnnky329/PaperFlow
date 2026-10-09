@@ -4,8 +4,12 @@ import argparse
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--executable", default="marker_single")
@@ -32,7 +36,21 @@ if args.disable_ocr:
 print("argv:", repr(argv), flush=True)
 started = time.monotonic()
 with (args.output / "gate.log").open("w") as log:
-    process = subprocess.Popen(argv, stdout=log, stderr=log, start_new_session=True)
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if "KEY" not in key.upper() and "TOKEN" not in key.upper() and key != "SURYA_INFERENCE_URL"
+    }
+    environment.update(
+        SURYA_INFERENCE_KEEP_ALIVE="0", SURYA_INFERENCE_HOST="127.0.0.1", SURYA_INFERENCE_PARALLEL="1"
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(Path(__file__).with_name("controlled_marker.py")), *argv],
+        stdout=log,
+        stderr=log,
+        start_new_session=True,
+        env=environment,
+    )
     try:
         code = process.wait(timeout=args.timeout)
     except (subprocess.TimeoutExpired, KeyboardInterrupt):

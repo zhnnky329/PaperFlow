@@ -1,5 +1,7 @@
 # PaperFlow 技术决策
 
+以下为按时间追加的决策与验证记录；最新状态以末尾及docs/validation/acceptance.md为准，保留早期失败与待验证快照。
+
 ## 2026-10-09 · 规格位置和现有内容
 根 README 原内容只有 `PaperFlow`。完整输入规格在 `PaperFlow_V1_Codex_Package/`，完整阅读后复制到根目录以供持续执行。保留规格包和已有 `marker/` 源码，不把第三方嵌套仓库及其测试 PDF 纳入应用提交。
 
@@ -23,3 +25,11 @@ Surya 会以新 session 启动 llama-server，单杀 Marker 进程组不足以�
 
 ## 2026-10-09 · 交付与未完成 Gate
 完成实现和可复现自动化，提供 dev/serve/backup/restore；PDF 引擎按需加载以缩小 Library 初始 bundle。Read Frog 操作留在用户独立 Chrome 扩展；本会话没有触发付费 DeepSeek。未将 NOT RUN 当成兼容性失败，故未擅自启用原生 fallback。当前不宣布 V1/Release Candidate：Read Frog 人工双语和 10 篇至少 8 篇质量 Gate 仍须通过；失败后按 §9 实施 fallback。
+
+## 2026-10-09 · 错误日志与推理出站边界
+Starlette 的最外层异常处理会重新抛出异常，可能使 Uvicorn 输出未脱敏错误。改在 HTTP 安全 middleware 内捕获意外异常，只记录类型、request id 与无路径/源码的栈帧；测试人为注入含私密文本的异常，验证不 re-raise、响应和日志均无原始内容。启动关闭 access log，避免搜索 query 留在终端日志。Marker 子进程去除继承的 SURYA_INFERENCE_URL 和 KEY/TOKEN 变量，强制本地推理 host；fake 子进程实际断言环境隔离。完整回归 28 + 3 + 2 PASS。
+
+非法URL端口与不完整IPv6括号应返回422，避免解析库ValueError变成500；补测后pytest 30 passed。Gate工具也采用受控supervisor并加载本机.env；质量对照复用已锁定的PDFium，不额外引入PyMuPDF。
+
+## 2026-10-09 · 十篇质量 Gate 补齐
+真实执行8个不同PDF的Marker任务和2个官方HTML导入；8本地Chrome页面77图片/165公式/60表格无坏图/解析/脚本错误、目录进度PASS。实际PDF渲染对照与截图审查保守计8/10可用，Attention公式拆行、ResNet宽表/识别瑕疵不计质量PASS，保留PDF。修复表格cell逐字换行，未用LLM重写整篇HTML。该抽查关闭样本数量门槛，不代表逐式数学校对或Read Frog已验收；详情quality-readability.md。

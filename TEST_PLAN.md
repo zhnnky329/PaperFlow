@@ -1,5 +1,7 @@
 # TEST_PLAN — PaperFlow V1 验收与回归测试
 
+实际执行结果（含 NOT RUN 与发布阻断）持续记录在 [验收状态](docs/validation/acceptance.md)；本文件是验收标准，不代表所有条目已通过。
+
 ## 1. 验收原则
 
 - `AUTOMATED PASS`：已运行测试命令并看到通过结果。

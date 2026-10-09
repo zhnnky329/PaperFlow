@@ -20,11 +20,15 @@ _cooldown = {}
 def parse(value):
     value = value.strip()
     if "://" in value:
-        url = urlsplit(value)
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError as exc:
+            raise HTTPException(422, "arXiv 地址格式不正确") from exc
         if (
             url.scheme != "https"
             or url.hostname not in HOSTS
-            or url.port not in (None, 443)
+            or port not in (None, 443)
             or url.username
             or url.password
             or url.query

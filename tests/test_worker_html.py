@@ -10,10 +10,13 @@ from test_library import upload
 
 def fake_cli(path, fail=False, slow=False):
     path.write_text(f"""#!/usr/bin/env python3
-import sys,time
+import sys,time,os
 from pathlib import Path
 if '--help' in sys.argv:
  print('--mode fast --output_format html');sys.exit(0)
+assert 'SURYA_INFERENCE_URL' not in os.environ
+assert 'DEEPSEEK_API_KEY' not in os.environ
+assert os.environ['SURYA_INFERENCE_HOST']=='127.0.0.1'
 {"time.sleep(10)" if slow else ""}
 {"sys.exit(3)" if fail else ""}
 out=Path(sys.argv[sys.argv.index('--output_dir')+1]);out.mkdir(parents=True,exist_ok=True)
@@ -31,7 +34,9 @@ def wait_job(client, job_id):
     raise AssertionError("Worker did not finish")
 
 
-def test_real_subprocess_queue_cache_failure_retry(config, pdf_bytes, tmp_path):
+def test_real_subprocess_queue_cache_failure_retry(config, pdf_bytes, tmp_path, monkeypatch):
+    monkeypatch.setenv("SURYA_INFERENCE_URL", "https://untrusted-inference.invalid")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "FAKE_KEY_FOR_ENV_BOUNDARY_TEST")
     executable = tmp_path / "fake-marker"
     fake_cli(executable)
     config.marker_executable = str(executable)

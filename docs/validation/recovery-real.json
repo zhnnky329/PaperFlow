@@ -1,0 +1,13 @@
+{
+  "backup": "PASS",
+  "restore_new_directory": "PASS",
+  "new_app_factory": "PASS",
+  "papers": 10,
+  "pdf_range_206": 8,
+  "html_readers": 8,
+  "images_200": 77,
+  "cache": "PASS",
+  "positions_identical": 8,
+  "translation": "NOT RUN",
+  "archive_bytes": 60162236
+}

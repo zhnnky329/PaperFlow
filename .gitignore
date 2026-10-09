@@ -1,4 +1,7 @@
 .DS_Store
+*.log
+backups/
+*.zip
 .venv/
 .marker-venv/
 .tools/

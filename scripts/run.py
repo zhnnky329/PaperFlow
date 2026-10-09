@@ -26,6 +26,7 @@ try:
                 "uvicorn",
                 "app.main:create_app",
                 "--factory",
+                "--no-access-log",
                 "--host",
                 "127.0.0.1",
                 "--port",
