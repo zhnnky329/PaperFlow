@@ -1,0 +1,39 @@
+[
+  {
+    "url": "https://export.arxiv.org/api/query?id_list=2402.08954",
+    "result": "HTTP 200",
+    "content_type": "application/atom+xml; charset=utf-8",
+    "final_url": "https://export.arxiv.org/api/query?id_list=2402.08954",
+    "bytes": 2381,
+    "seconds": 0.68
+  },
+  {
+    "url": "https://arxiv.org/html/2402.08954",
+    "result": "HTTP 200",
+    "content_type": "text/html; charset=utf-8",
+    "final_url": "https://arxiv.org/html/2402.08954",
+    "bytes": 82044,
+    "seconds": 3.54
+  },
+  {
+    "url": "https://arxiv.org/html/1706.03762",
+    "result": "HTTP 200",
+    "content_type": "text/html; charset=utf-8",
+    "final_url": "https://arxiv.org/html/1706.03762",
+    "bytes": 188707,
+    "seconds": 2.25
+  },
+  {
+    "url": "https://arxiv.org/html/hep-th/9901001",
+    "result": "HTTP 200",
+    "content_type": "text/html; charset=utf-8",
+    "final_url": "https://arxiv.org/html/hep-th/9901001",
+    "bytes": 209105,
+    "seconds": 0.57
+  },
+  {
+    "url": "https://arxiv.org/html/9999.99999",
+    "result": "HTTPStatusError",
+    "http_status": 404
+  }
+]

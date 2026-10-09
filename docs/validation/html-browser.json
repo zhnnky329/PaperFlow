@@ -1,0 +1,13 @@
+{
+  "images": 5,
+  "math": 9,
+  "katex": 9,
+  "katexErrors": 0,
+  "tables": 8,
+  "headings": 26,
+  "brokenImages": 0,
+  "consoleErrors": 0,
+  "toc": "PASS",
+  "progress": "PASS",
+  "readFrog": "NOT RUN"
+}
