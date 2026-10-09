@@ -86,3 +86,5 @@
 最终默认 `make serve` 真启动：health/Library/UI 均HTTP200，空个人库0条，Marker capability=true；验收推理结束后llama-server剩余进程0。数据默认Application Support，10篇验收数据未植入个人Library。重启命令仍为make serve。
 
 最新文件夹/Finder 扩展验收见 [folders.md](folders.md)，保留原有 Marker 与 Read Frog Gate 状态。
+
+2026-10-10：同机独立源码目录安装、升级依赖及回归见 [install-dependencies.md](install-dependencies.md)。PDF.js 6.4.299 / KaTeX 0.19.0 / Vitest 5.0.3 验证通过，npm audit 为 0 项漏洞；后端 34、前端 3、Chrome E2E 3 通过。另一台机器安装及用户 Read Frog 扩展测试仍 NOT RUN。用户自行使用 Git SSH 提交，代理未推送或更改仓库可见性。

@@ -29,6 +29,7 @@ try {
           paragraphs: document.querySelectorAll("article p").length,
           images: document.querySelectorAll("article img").length,
           brokenImages: Array.from(document.images).filter(i => !i.naturalWidth).length,
+          renderedMath: document.querySelectorAll("article .katex").length,
           math: document.querySelectorAll("article [data-math-source]").length +
             Array.from(document.querySelectorAll("article math")).filter(node => !node.closest(".katex")).length,
           katexErrors: document.querySelectorAll(".katex-error").length,
@@ -66,7 +67,7 @@ try {
           await links.last().click();
           await page.screenshot({ path: name + "-last-section.png" });
         }
-        row.status = row.dom.brokenImages || row.dom.katexErrors || row.dom.documentWidth > 1280 || row.progress === "FAIL" ? "FAIL" : "PASS";
+        row.status = (row.dom.math > 0 && row.dom.renderedMath === 0) || row.dom.brokenImages || row.dom.katexErrors || row.dom.documentWidth > 1280 || row.progress === "FAIL" ? "FAIL" : "PASS";
       } else {
         await page.waitForSelector(".ltx_document", { timeout: 30000 });
         row.status = "PASS";

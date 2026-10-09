@@ -201,7 +201,10 @@ export function PdfReader() {
   useEffect(() => {
     if (!paper?.has_pdf) return;
     let canceled = false;
-    const task = getDocument(`/api/v1/papers/${id}/pdf`);
+    const task = getDocument({
+      url: `/api/v1/papers/${id}/pdf`,
+      enableXfa: false,
+    });
     restored.current = false;
     setReady(false);
     Promise.all([

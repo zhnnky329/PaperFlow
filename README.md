@@ -244,7 +244,7 @@ make e2e        # Chrome 浏览器测试
 
 `make dev` 和 `make serve` 不要同时运行。E2E 使用独立测试库，需要已安装的 Chrome，运行前先释放 8000 端口。
 
-当前仍是开发版本，全新机器安装尚未验证。已执行的测试、环境和待验证项目见 [验收记录](docs/validation/acceptance.md)，实现说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。目前没有 PDF 全文搜索、笔记、云同步或多人账户。
+当前仍是开发版本，已在 macOS Apple Silicon 的独立源码目录完成安装和测试，其他机器和平台尚未验证。已执行的测试、环境和待验证项目见 [验收记录](docs/validation/acceptance.md)，实现说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。目前没有 PDF 全文搜索、笔记、云同步或多人账户。
 
 欢迎通过 [Issues](https://github.com/zhnnky329/PaperFlow/issues) 反馈问题或提出建议。报告问题时请附系统版本、复现步骤和错误提示；转换问题可补充论文来源与 Marker 模式。不要提交私人论文、密钥或个人数据库。
 

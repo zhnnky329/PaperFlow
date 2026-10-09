@@ -53,3 +53,11 @@ Starlette 的最外层异常处理会重新抛出异常，可能使 Uvicorn 输�
 用户明确选用 MIT 许可证。根目录添加 LICENSE，正文采用 SPDX 的标准 MIT 文本，版权署名为仓库所有者 zhnnky329；README 链接该许可证并在末尾致谢 Marker。MIT 适用于 PaperFlow 自身，第三方依赖及模型权重仍遵循其上游许可，不重新授权或捆绑模型。
 
 参考 Memos、Zettlr 和 Marker 的 README，按项目介绍、安装、操作步骤、可选转换配置、备份和开发组织文档。浏览器插件只保留一句使用提示；详细测试状态继续保存在 docs/validation，不改变尚未执行的验收结论。本次验证：本地链接及目录锚点、10 个 Shell 示例的 sh -n 语法、Make target 名称、LICENSE 与 SPDX MIT 正文核对、git diff --check 均 PASS；仅修改文档与许可证，未重复运行应用回归。
+
+## 2026-10-10 · 源码安装验证与依赖安全升级
+
+将源码复制到独立临时目录，创建新的 Python venv 并运行 npm ci，不复用项目 node_modules 或个人 Library。真实安装发现旧锁文件存在 5 个 npm 审计项，涉及 PDF.js、KaTeX 和 Vitest 的依赖链。升级并精确锁定 PDF.js 6.4.299、KaTeX 0.19.0、Vitest 5.0.3；保留 Vite 7 和 Node 24。依据已安装 PDF.js 的类型与源码，将 getDocument 的字符串参数改为对象 URL；关闭 XFA，不添加已移除或虚构的参数。
+
+初次迁移的类型检查分别发现旧字符串签名和不再支持的 isEvalSupported 参数，修正后完整回归通过：34 pytest、3 Vitest、3 Chrome E2E；lint/typecheck/build PASS；npm audit 0 项漏洞。对隔离的公开论文库副本检查 8 篇已有真实 Marker HTML，77 图片、165 个 KaTeX 公式、60 表格，无坏图/解析/页面脚本错误，目录与进度恢复通过。这次未重新运行 Marker 推理，也未操作用户 Read Frog 扩展；保留原有排版质量限制及人工 Gate。
+
+该验证使用同一台 Mac 和已有系统运行时/模型缓存，不能宣称第二台机器或全新系统安装通过。用户明确表示自行使用 Git SSH 提交，代理停止远端操作；新增修复和验证记录留在工作区。命令与证据见 docs/validation/install-dependencies.md。

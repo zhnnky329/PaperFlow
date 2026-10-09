@@ -15,8 +15,8 @@
 | M3 | Chrome 真 PDF.js + 35 页、文本层、第 6 页及 110% 缩放恢复 PASS |
 | M4 | 真 API→Marker→净化发布→缓存→重启 PASS；队列故障/取消/重试/孤儿恢复 PASS |
 | M5 | 8篇真Marker/2篇官方HTML，10篇抽查8可用、2保留排版限制；Chrome图/公式/TOC/进度PASS，插件待人工 |
-| M6 | 配置/备份恢复/启动文档/依赖锁定完成；README 按公开使用文档重写，用户选定 MIT 并添加 LICENSE、Marker 致谢；按两项设计 skill 优化 UI，真实截图和回归见 [UI 验证](docs/validation/ui-polish.md)；全新机器安装 NOT RUN |
-| M7 | lint/typecheck/Pytest 34/Vitest 3/Chrome E2E 3 PASS；发布 Gate 仍未关闭 |
+| M6 | 配置/备份恢复/启动文档/依赖锁定完成；README 使用指南、MIT LICENSE 和 Marker 致谢已添加；同机独立源码目录安装 PASS，另一台机器 NOT RUN；UI 证据见 [UI 验证](docs/validation/ui-polish.md) |
+| M7 | 依赖安全升级后 lint/typecheck/Pytest 34/Vitest 3/Chrome E2E 3 PASS，npm audit 0 漏洞，8 篇已有 Marker HTML 回归 PASS；见 [安装与依赖验证](docs/validation/install-dependencies.md)；Read Frog 发布 Gate 仍未关闭，远端提交由用户自行处理 |
 
 ## 全局完成定义（Definition of Done）
 
