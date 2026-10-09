@@ -31,12 +31,12 @@ def backup(data_dir: Path, output: Path):
             with sqlite3.connect(data_dir / "paperflow.sqlite3") as source:
                 with sqlite3.connect(stage / "paperflow.sqlite3") as target:
                     source.backup(target)
-            papers = data_dir / "papers"
-            if papers.exists():
-                for file in papers.rglob("*"):
-                    if file.is_symlink():
+            for name in ("papers", "folders"):
+                directory = data_dir / name
+                if directory.exists():
+                    if directory.is_symlink() or any(file.is_symlink() for file in directory.rglob("*")):
                         raise ValueError("Symlink in library; backup refused")
-                shutil.copytree(papers, stage / "papers")
+                    shutil.copytree(directory, stage / name)
             checksums = {
                 str(p.relative_to(stage)): hashlib.file_digest(p.open("rb"), "sha256").hexdigest()
                 for p in stage.rglob("*")

@@ -8,12 +8,12 @@
 
 | 命令 | 实际结果 |
 |---|---|
-| `.venv/bin/python -m pytest tests -q`（允许进程枚举环境） | 最终30 passed, 1 warning in 3.50s |
+| `.venv/bin/python -m pytest tests -q`（允许进程枚举环境） | 文件夹扩展后 34 passed, 1 warning in 4.14s |
 | `make lint` | ruff All checks passed；eslint exit 0 |
 | `make typecheck` | tsc -b exit 0 |
 | `make test` 前端部分 | Vitest 3 passed |
-| `make e2e` | 最终2 passed (6.5s)；Chrome 真 canvas/textLayer + 第 6 页视窗/110%缩放恢复、编辑/搜索/删除、暗色设置恢复 |
-| `make build` | Vite build exit 0；Library 317.62kB，PDF Reader 按需 chunk 421.19kB，worker 独立本地资源 |
+| `make e2e` | 文件夹扩展后 3 passed (8.0s)；Chrome 真 canvas/textLayer + 第 6 页视窗/110%缩放恢复、编辑/搜索/删除、暗色设置恢复 |
+| `make build` | Vite build exit 0；Library 324.07kB，PDF Reader 按需 chunk 421.24kB，worker 独立本地资源 |
 | `make dev` | Vite ready 220ms；proxy health 200、同源 mutation 200；Ctrl-C shutdown complete |
 | `make serve` | API startup complete，127.0.0.1；应用不预加载模型 |
 | `scripts/marker_gate.py` Attention fast | returncode=0，312.1s（含首次下载/初始化），5 images / 9 math / 8 tables |
@@ -84,3 +84,5 @@
 均由实际 Chrome 生成：library-empty.png、library-real.png、library-arxiv-real.png、pdf-reader.png、settings-dark.png、html-real.png、html-dark-real.png、html-math-real.png。生成 fixture PDF 截图不算科研论文质量样本，真实论文图截图分别标明在 M0。
 
 最终默认 `make serve` 真启动：health/Library/UI 均HTTP200，空个人库0条，Marker capability=true；验收推理结束后llama-server剩余进程0。数据默认Application Support，10篇验收数据未植入个人Library。重启命令仍为make serve。
+
+最新文件夹/Finder 扩展验收见 [folders.md](folders.md)，保留原有 Marker 与 Read Frog Gate 状态。

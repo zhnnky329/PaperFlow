@@ -84,7 +84,7 @@ def test_arxiv_import_offline_and_duplicates(client, monkeypatch):
 def test_taxonomy_and_settings(client):
     row = client.post("/api/v1/collections", json={"name": "SLAM"}).json()
     assert (
-        client.patch("/api/v1/collections/" + row["id"], json={"name": "Motion"}).json()["name"] == "motion"
+        client.patch("/api/v1/collections/" + row["id"], json={"name": "Motion"}).json()["name"] == "Motion"
     )
     assert client.delete("/api/v1/collections/" + row["id"]).status_code == 200
     assert (

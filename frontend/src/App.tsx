@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   Plus,
@@ -28,6 +28,11 @@ import { Modal } from "./components/Modal";
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
 export function App({ settingsPage = false }: { settingsPage?: boolean }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const collection = searchParams.get("folder") || "";
+  function setCollection(value: string) {
+    setSearchParams(value ? { folder: value } : {});
+  }
   const [papers, setPapers] = useState<Paper[]>([]),
     [total, setTotal] = useState(0),
     [collections, setCollections] = useState<Label[]>([]),
@@ -36,7 +41,6 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
     [query, setQuery] = useState(""),
     [debounced, setDebounced] = useState(""),
     [status, setStatus] = useState(""),
-    [collection, setCollection] = useState(""),
     [tag, setTag] = useState(""),
     [sort, setSort] = useState("recent"),
     [page, setPage] = useState(1);
@@ -47,6 +51,10 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
     [add, setAdd] = useState(false),
     [tab, setTab] = useState("pdf"),
     [arxiv, setArxiv] = useState("");
+  const [importFolder, setImportFolder] = useState("");
+  const [organize, setOrganize] = useState<Paper | null>(null);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const [deleteFolder, setDeleteFolder] = useState(false);
   const [edit, setEdit] = useState<Paper | null>(null),
     [remove, setRemove] = useState<Paper | null>(null),
     [taxonomy, setTaxonomy] = useState<{
@@ -102,17 +110,24 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           page_size: "30",
         });
         if (status) params.set("status", status);
-        if (collection) params.set("collection", collection);
+        if (collection === "unfiled") params.set("unfiled", "true");
+        else if (collection) params.set("collection", collection);
         if (tag) params.set("tag", tag);
-        const [result, groups, labels] = await Promise.all([
+        const [result, groups, labels, preferences] = await Promise.all([
           api<{ items: Paper[]; total: number }>("/papers?" + params),
           api<Label[]>("/collections"),
           api<Label[]>("/tags"),
+          api<Settings>("/settings"),
         ]);
         if (alive) {
           setPapers(result.items);
           setTotal(result.total);
           setCollections(groups);
+          setConfig((prev) =>
+            JSON.stringify(prev) === JSON.stringify(preferences)
+              ? prev
+              : preferences,
+          );
           setTags(labels);
           setLoading(false);
         }
@@ -156,6 +171,12 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           "/papers/upload",
           { method: "POST", body: data },
         );
+        try {
+          await fileIntoFolder(result.paper);
+        } catch (e) {
+          results.push(`${file.name}：已保留论文，但归类失败：${message(e)}`);
+          continue;
+        }
         results.push(
           `${file.name}：${result.dedupe ? "已存在，未重复创建" : "导入成功"}`,
         );
@@ -174,6 +195,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
         "/papers/arxiv",
         { method: "POST", body: JSON.stringify({ input: arxiv }) },
       );
+      await fileIntoFolder(result.paper);
       setNotice(
         result.dedupe
           ? `已存在：${result.paper.title}`
@@ -181,6 +203,28 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       );
       setArxiv("");
     });
+  }
+  function startImport() {
+    setImportFolder(collection === "unfiled" ? "" : collection);
+    setNotice("");
+    setAdd(true);
+  }
+  async function fileIntoFolder(paper: Paper) {
+    if (!importFolder) return;
+    const folder = collections.find((c) => c.id === importFolder);
+    if (!folder) throw new Error("目标文件夹已不存在，请重新选择");
+    await api(`/papers/${paper.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        collections: [
+          ...new Set([...paper.collections.map((c) => c.name), folder.name]),
+        ],
+      }),
+    });
+  }
+  function organizePaper(paper: Paper) {
+    setSelectedFolders(paper.collections.map((c) => c.id));
+    setOrganize(paper);
   }
   function open(paper: Paper) {
     if (paper.official_html_url)
@@ -191,11 +235,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
   function editTaxonomy(kind: "collections" | "tags", item?: Label) {
     setTaxonomy({ kind, item });
     setName(item?.name || "");
+    setDeleteFolder(false);
   }
   const heading = settingsPage
     ? "Settings"
     : collection
-      ? collections.find((c) => c.id === collection)?.name || "Collection"
+      ? collection === "unfiled"
+        ? "未分类"
+        : collections.find((c) => c.id === collection)?.name || "文件夹"
       : status
         ? { unread: "未读", reading: "阅读中", finished: "已读" }[status]
         : "Library";
@@ -222,7 +269,6 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             to="/"
             onClick={() => {
               setStatus("");
-              setCollection("");
               setPage(1);
             }}
           >
@@ -238,7 +284,6 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               key={s}
               onClick={() => {
                 setStatus(s);
-                setCollection("");
                 setPage(1);
               }}
             >
@@ -247,39 +292,53 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             </Link>
           ))}
           <div className="nav-caption">
-            <span>Collections</span>
+            <span>文件夹</span>
             <Button
               variant="ghost"
-              aria-label="新建集合"
+              aria-label="新建文件夹"
               onClick={() => editTaxonomy("collections")}
             >
               <Plus size={14} />
             </Button>
           </div>
-          {collections.length === 0 && (
-            <p className="sidebar-hint">按研究主题整理你的论文</p>
-          )}
+          <Link
+            to="/?folder=unfiled"
+            className={
+              collection === "unfiled" && !settingsPage
+                ? "nav-item active"
+                : "nav-item"
+            }
+            onClick={() => {
+              setStatus("");
+              setPage(1);
+            }}
+          >
+            <Folder size={15} />
+            未分类
+          </Link>
           {collections.map((c) => (
             <div className="taxonomy-row" key={c.id}>
               <Link
-                to="/"
+                to={`/?folder=${c.id}`}
                 className={
                   !settingsPage && collection === c.id
                     ? "nav-item active"
                     : "nav-item"
                 }
                 onClick={() => {
-                  setCollection(c.id);
                   setStatus("");
+                  setQuery("");
+                  setTag("");
                   setPage(1);
                 }}
               >
                 <Folder size={15} />
                 {c.name}
+                <span className="folder-count">{c.paper_count ?? 0}</span>
               </Link>
               <Button
                 variant="ghost"
-                aria-label={`管理集合 ${c.name}`}
+                aria-label={`管理文件夹 ${c.name}`}
                 onClick={() => editTaxonomy("collections", c)}
               >
                 <MoreHorizontal size={14} />
@@ -307,17 +366,28 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <p className="workspace-description">
               {settingsPage
                 ? "让工作台适合你的阅读习惯。"
-                : "整理文献，继续阅读。"}
+                : collection && collection !== "unfiled"
+                  ? "按你的分类整理论文，同步到 Finder 文件夹。"
+                  : "整理文献，继续阅读。"}
+              {!settingsPage && collection && collection !== "unfiled" && (
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    action(() =>
+                      api(`/collections/${collection}/reveal`, {
+                        method: "POST",
+                      }),
+                    )
+                  }
+                >
+                  <Folder size={14} />在 Finder 中打开
+                </Button>
+              )}
             </p>
           </div>
           {!settingsPage && (
-            <Button
-              variant="default"
-              onClick={() => {
-                setAdd(true);
-                setNotice("");
-              }}
-            >
+            <Button variant="default" onClick={startImport}>
               <Plus size={16} />
               Add Paper
             </Button>
@@ -502,6 +572,13 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 <section className="settings-section">
                   <h2>Storage & recovery</h2>
                   <p className="storage-path">{config.data_dir}</p>
+                  <h3>Finder 文件夹</h3>
+                  <p className="storage-path">{config.folders_root}</p>
+                  <p>
+                    应用内文件夹自动同步为这里的同名目录，保存独立 PDF
+                    副本。Finder
+                    中新增、移动或改名的文件不会反向导入；修改过的副本及额外文件会保留。
+                  </p>
                   <p>
                     PDF 会复制至这个目录。停止应用后运行 make backup；恢复用
                     scripts/backup.py 的 restore 子命令。先验证备份，再升级。
@@ -514,6 +591,52 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           </section>
         ) : (
           <>
+            {config?.folder_sync?.status === "failed" && (
+              <div className="notice error" role="alert">
+                {config.folder_sync.error}
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    action(() => api("/collections/sync", { method: "POST" }))
+                  }
+                >
+                  重试 Finder 同步
+                </Button>
+              </div>
+            )}
+            {!collection && !query && !status && !tag && (
+              <section className="folder-section" aria-label="我的文件夹">
+                <div className="folder-section-heading">
+                  <h2>我的文件夹</h2>
+                  <Button
+                    variant="ghost"
+                    onClick={() => editTaxonomy("collections")}
+                  >
+                    <Plus size={14} />
+                    新建文件夹
+                  </Button>
+                </div>
+                {collections.length ? (
+                  <div className="folder-grid">
+                    {collections.map((c) => (
+                      <Link
+                        className="folder-card"
+                        key={c.id}
+                        to={`/?folder=${c.id}`}
+                      >
+                        <Folder size={25} />
+                        <strong>{c.name}</strong>
+                        <span>{c.paper_count ?? 0} 篇论文</span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">
+                    创建自己的分类，例如 SLAM、路径规划或待读文献。
+                  </p>
+                )}
+              </section>
+            )}
             <div className="library-toolbar">
               <div className="search-box">
                 <Search size={16} />
@@ -576,29 +699,36 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   <BookOpen size={32} />
                 </div>
                 <h2>
-                  {query || status || tag || collection
+                  {query || status || tag
                     ? "没有匹配的论文"
-                    : "你的下一篇论文，从这里开始"}
+                    : collection && collection !== "unfiled"
+                      ? "这个文件夹还没有论文"
+                      : collection === "unfiled"
+                        ? "没有未分类的论文"
+                        : "你的下一篇论文，从这里开始"}
                 </h2>
                 <p>
-                  {query || status || tag || collection
+                  {query || status || tag
                     ? "调整搜索词或筛选条件。"
-                    : "拖入 PDF，或收藏 arXiv 链接。原文、分类与阅读进度都留在本机。"}
+                    : collection && collection !== "unfiled"
+                      ? "在这里导入 PDF，或从全部论文中选择论文放入这个文件夹。"
+                      : collection === "unfiled"
+                        ? "新论文可以直接导入指定文件夹，也可以稍后整理。"
+                        : "拖入 PDF，或收藏 arXiv 链接。原文、分类与阅读进度都留在本机。"}
                 </p>
-                {query || status || tag || collection ? (
+                {query || status || tag ? (
                   <Button
                     onClick={() => {
                       setQuery("");
                       setStatus("");
                       setTag("");
-                      setCollection("");
                       setPage(1);
                     }}
                   >
                     清除筛选
                   </Button>
                 ) : (
-                  <Button variant="default" onClick={() => setAdd(true)}>
+                  <Button variant="default" onClick={startImport}>
                     <Plus size={15} />
                     添加论文
                   </Button>
@@ -635,6 +765,16 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                         )}
                       </p>
                       <div className="paper-meta">
+                        {p.collections.map((c) => (
+                          <Link
+                            className="tag folder-tag"
+                            key={c.id}
+                            to={`/?folder=${c.id}`}
+                          >
+                            <Folder size={11} />
+                            {c.name}
+                          </Link>
+                        ))}
                         <span className="format">
                           {p.official_html_url
                             ? "Official HTML ↗"
@@ -745,6 +885,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                         )}
                       </select>
                       <div>
+                        <Button
+                          variant="ghost"
+                          aria-label={`整理 ${p.title} 到文件夹`}
+                          onClick={() => organizePaper(p)}
+                        >
+                          <Folder size={14} />
+                          归类
+                        </Button>
                         <Button asChild variant="ghost">
                           <Link to={`/papers/${p.id}/pdf`}>PDF</Link>
                         </Button>
@@ -806,9 +954,13 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <footer className="workspace-footer">
               <span>论文与阅读进度保存在本机</span>
               <span>
-                {config?.marker_available
-                  ? "Marker 已就绪"
-                  : "Marker 未安装；可继续使用 Library 和 PDF"}
+                {["queued", "running"].includes(
+                  config?.folder_sync?.status || "",
+                )
+                  ? "正在同步 Finder 文件夹…"
+                  : config?.marker_available
+                    ? "Marker 已就绪"
+                    : "Marker 未安装；可继续使用 Library 和 PDF"}
               </span>
             </footer>
           </>
@@ -822,6 +974,22 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             if (!busy) setAdd(false);
           }}
         >
+          <label className="field">
+            存入文件夹
+            <select
+              aria-label="存入文件夹"
+              disabled={busy}
+              value={importFolder}
+              onChange={(e) => setImportFolder(e.target.value)}
+            >
+              <option value="">未分类（稍后整理）</option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="tabs">
             <Button
               variant={tab === "pdf" ? "default" : "ghost"}
@@ -926,9 +1094,6 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     abstract: data.get("abstract"),
                     source_url: String(data.get("source_url")) || null,
                     tags: String(data.get("tags")).split(",").filter(Boolean),
-                    collections: String(data.get("collections"))
-                      .split(",")
-                      .filter(Boolean),
                   }),
                 });
                 setEdit(null);
@@ -972,13 +1137,22 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 defaultValue={edit.tags.map((t) => t.name).join(", ")}
               />
             </label>
-            <label className="field">
-              Collections（逗号分隔）
-              <input
-                name="collections"
-                defaultValue={edit.collections.map((c) => c.name).join(", ")}
-              />
-            </label>
+            <div className="detail-folders">
+              <span>
+                文件夹：
+                {edit.collections.map((c) => c.name).join("、") || "未分类"}
+              </span>
+              <Button
+                type="button"
+                onClick={() => {
+                  const paper = edit;
+                  setEdit(null);
+                  organizePaper(paper);
+                }}
+              >
+                整理到文件夹
+              </Button>
+            </div>
             <div className="form-actions">
               <Button
                 type="button"
@@ -1038,7 +1212,11 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       {taxonomy && (
         <Modal
           title={
-            taxonomy.kind === "collections" ? "管理 Collection" : "管理 Tag"
+            taxonomy.kind === "collections"
+              ? taxonomy.item
+                ? "管理文件夹"
+                : "新建文件夹"
+              : "管理 Tag"
           }
           close={() => setTaxonomy(null)}
         >
@@ -1046,7 +1224,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             onSubmit={(e) => {
               e.preventDefault();
               action(async () => {
-                await api(
+                const saved = await api<Label>(
                   "/" +
                     taxonomy.kind +
                     (taxonomy.item ? "/" + taxonomy.item.id : ""),
@@ -1055,6 +1233,8 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     body: JSON.stringify({ name }),
                   },
                 );
+                if (taxonomy.kind === "collections" && !taxonomy.item)
+                  setCollection(saved.id);
                 setTaxonomy(null);
               });
             }}
@@ -1068,6 +1248,17 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 maxLength={80}
               />
             </label>
+            {taxonomy.kind === "collections" && (
+              <p className="muted">
+                同步到 Finder 中的同名目录。原始 PDF 保留在论文库中。
+              </p>
+            )}
+            {deleteFolder && (
+              <p className="error">
+                仅清理这个分类及未修改的 PDF 副本。论文原文、其他文件夹及 Finder
+                中额外文件保留。
+              </p>
+            )}
             <div className="form-actions">
               {taxonomy.item && (
                 <Button
@@ -1075,17 +1266,28 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   variant="destructive"
                   disabled={busy}
                   onClick={() =>
-                    action(async () => {
-                      await api("/" + taxonomy.kind + "/" + taxonomy.item!.id, {
-                        method: "DELETE",
-                      });
-                      setTaxonomy(null);
-                      setCollection("");
-                      setTag("");
-                    })
+                    !deleteFolder
+                      ? setDeleteFolder(true)
+                      : action(async () => {
+                          await api(
+                            "/" + taxonomy.kind + "/" + taxonomy.item!.id,
+                            {
+                              method: "DELETE",
+                            },
+                          );
+                          setTaxonomy(null);
+                          setCollection("");
+                          setTag("");
+                        })
                   }
                 >
-                  删除分类（保留论文）
+                  {deleteFolder
+                    ? taxonomy.kind === "collections"
+                      ? "确认删除文件夹（保留论文）"
+                      : "确认删除标签"
+                    : taxonomy.kind === "collections"
+                      ? "删除文件夹（保留论文）"
+                      : "删除标签"}
                 </Button>
               )}
               <Button variant="default" disabled={busy}>
@@ -1110,6 +1312,64 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           )}
           {error && (
             <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+        </Modal>
+      )}
+      {organize && (
+        <Modal
+          title="整理到文件夹"
+          description={organize.title}
+          close={() => setOrganize(null)}
+        >
+          <p className="muted">
+            选择要存放的文件夹，可同时放入多个。取消全部勾选后归入未分类。
+          </p>
+          <div className="folder-picker">
+            {collections.map((c) => (
+              <label key={c.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedFolders.includes(c.id)}
+                  onChange={(e) =>
+                    setSelectedFolders((current) =>
+                      e.target.checked
+                        ? [...current, c.id]
+                        : current.filter((id) => id !== c.id),
+                    )
+                  }
+                />
+                <Folder size={16} />
+                <span>{c.name}</span>
+              </label>
+            ))}
+            {!collections.length && <p>先在侧栏创建一个文件夹，再整理论文。</p>}
+          </div>
+          <div className="form-actions">
+            <Button onClick={() => setOrganize(null)}>取消</Button>
+            <Button
+              variant="default"
+              disabled={busy}
+              onClick={() =>
+                action(async () => {
+                  await api(`/papers/${organize.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      collections: collections
+                        .filter((c) => selectedFolders.includes(c.id))
+                        .map((c) => c.name),
+                    }),
+                  });
+                  setOrganize(null);
+                })
+              }
+            >
+              保存归类
+            </Button>
+          </div>
+          {error && (
+            <p className="error" role="alert">
               {error}
             </p>
           )}

@@ -85,6 +85,12 @@ LLAMA_CPP_BINARY="/opt/homebrew/bin/llama-server"
 
 翻译会把选定文本发给你配置的服务，可能产生 Token 费用，须主动操作。本会话未调用 DeepSeek；翻译验收 NOT RUN。若实际失败且 DOM/CSP 调整仍无法修复，按 ARCHITECTURE §9 启用服务端密钥、段落缓存和公式保护的原生 fallback；当前该分支未激活，发布 Gate 保持阻断。
 
+## 自定义文件夹与 Finder
+
+点击侧栏文件夹旁的 `+` 创建并命名分类。进入文件夹后 Add Paper 默认导入到这里；已有论文点击“归类”选择文件夹，全部取消则回到“未分类”。文件夹支持重命名和二次确认删除，删除分类会保留论文原文。
+
+文件夹会后台同步为 `~/Library/Application Support/PaperFlow/folders/<名称>/` 的真实目录（自定义 data dir 时位于该目录的 folders 下），可点击“在 Finder 中打开”。保存独立 PDF 副本，多文件夹各占一份磁盘空间；原始 PDF 继续用于阅读和转换。远程条目下载 PDF 后才生成副本。同步方向是应用到 Finder；Finder 新增/移动/改名不反向导入。修改过的副本与额外文件保留，冲突显示错误并可重试。截图、自动化和真实 macOS 验证见 [文件夹验证](docs/validation/folders.md)。
+
 ## 数据、备份与恢复
 
 默认数据：`~/Library/Application Support/PaperFlow`，可在 `.env` 用 `PAPERFLOW_DATA_DIR` 指定。数据库使用 WAL 和 Alembic 迁移，启动不清库。PDF/HTML/图片都在受控 UUID 路径；不依赖导入原文件继续存在。不要把数据目录放进 Git。
@@ -99,7 +105,7 @@ make backup
 # 然后将 PAPERFLOW_DATA_DIR 指向 restored-data，make serve 验证
 ```
 
-备份通过 SQLite backup API 取得一致数据库快照，包含所有论文资产，附 SHA256 清单；恢复验证 ZIP 路径、哈希、SQLite integrity。不能只复制 `paperflow.sqlite3` 而遗漏 WAL；升级前备份，保留旧目录直到验证完成。
+备份通过 SQLite backup API 取得一致数据库快照，包含所有论文资产和 Finder 文件夹（含额外文件），附 SHA256 清单；恢复验证 ZIP 路径、哈希、SQLite integrity。不能只复制 `paperflow.sqlite3` 而遗漏 WAL；升级前备份，保留旧目录直到验证完成。
 
 ## 真实验证入口
 

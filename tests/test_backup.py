@@ -3,6 +3,7 @@ from pathlib import Path
 import zipfile
 import pytest
 from test_library import upload
+from test_folders import eventually
 
 spec = importlib.util.spec_from_file_location(
     "backup", Path(__file__).resolve().parents[1] / "scripts/backup.py"
@@ -18,11 +19,17 @@ def test_backup_requires_stop_and_recovers_assets(app, config, pdf_bytes, tmp_pa
         app, base_url="http://127.0.0.1:8000", headers={"Origin": "http://127.0.0.1:8000", "X-PaperFlow": "1"}
     ) as client:
         paper = upload(client, pdf_bytes)
+        client.patch("/api/v1/papers/" + paper["id"], json={"collections": ["BackupFolder"]})
+        folder = config.data_dir / "folders/BackupFolder"
+        eventually(lambda: bool(list(folder.glob("*.pdf"))))
+        (folder / "note.txt").write_text("User note")
         with pytest.raises(ValueError, match="Stop"):
             module.backup(config.data_dir, tmp_path / "running.zip")
     archive = module.backup(config.data_dir, tmp_path / "backup.zip")
     target = module.restore(archive, tmp_path / "restored")
     assert (target / "papers" / paper["id"] / "original.pdf").read_bytes() == pdf_bytes
+    assert next((target / "folders/BackupFolder").glob("*.pdf")).read_bytes() == pdf_bytes
+    assert (target / "folders/BackupFolder/note.txt").read_text() == "User note"
     import sqlite3
 
     with sqlite3.connect(target / "paperflow.sqlite3") as db:

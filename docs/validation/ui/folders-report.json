@@ -1,0 +1,11 @@
+{
+  "origin": "http://127.0.0.1:8010",
+  "folder": "SLAM 研究",
+  "finderPath": "/tmp/paperflow-quality-gate/folders/SLAM 研究",
+  "copies": 1,
+  "equalToOriginal": true,
+  "nativeOpen": "PASS",
+  "finderWindowVisualInspection": "NOT RUN",
+  "pageErrors": [],
+  "readFrog": "NOT RUN"
+}

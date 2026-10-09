@@ -120,3 +120,7 @@ Known limitations (accepted):
 Start command:
 Backup/restore procedure:
 ```
+
+## 用户新增：自定义文件夹 / Finder
+
+实际自动化覆盖见 tests/test_folders.py、test_backup.py 和 tests/e2e/library.spec.ts：命名及大小写保留/去重、路径拒绝、计数与未分类、多分类的独立副本、中文目录改名、冲突不覆盖、重启补齐、外部改动与额外文件保留、symlink 根目录与副本边界、失败重试、Finder 根目录损坏时 Library 可用、含 folders 的停止备份和恢复。真实公开 PDF/Chrome/macOS open 入口脚本为 scripts/validate_folders.mjs，人工窗口视觉审查单独记录 NOT RUN。Finder 反向同步与子文件夹不在本次验收范围。

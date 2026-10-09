@@ -36,12 +36,14 @@ from .storage import ingest, delete_assets
 from .worker import Worker, settings, job_dict
 from .html import reader_document
 from . import arxiv
+from .folders import FolderSync, FolderConflict, folder_name
 
 
 def create_app(config=None):
     config = config or Config()
     engine, sessions = database(config)
     worker = Worker(config, sessions)
+    folder_sync = FolderSync(config, sessions)
     import_lock = threading.RLock()
     metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="arxiv")
     metadata_pending = set()
@@ -57,6 +59,7 @@ def create_app(config=None):
         def finish(_):
             with metadata_lock:
                 metadata_pending.discard(paper_id)
+            folder_sync.request()
 
         future.add_done_callback(finish)
 
@@ -80,10 +83,12 @@ def create_app(config=None):
                 paper.metadata_status = "failed"
             session.commit()
         worker.start()
+        folder_sync.start()
         try:
             yield
         finally:
             worker.stop()
+            folder_sync.stop()
             metadata_pool.shutdown(wait=True, cancel_futures=True)
             logger.removeHandler(handler)
             handler.close()
@@ -93,6 +98,7 @@ def create_app(config=None):
 
     app = FastAPI(title="PaperFlow", version="0.1.0", lifespan=lifespan)
     app.state.sessions, app.state.worker, app.state.config = sessions, worker, config
+    app.state.folder_sync = folder_sync
 
     @app.middleware("http")
     async def security(request: Request, call_next):
@@ -234,6 +240,7 @@ def create_app(config=None):
         q: str = Query("", max_length=500),
         status: Literal["unread", "reading", "finished"] | None = None,
         collection: str | None = None,
+        unfiled: bool = False,
         tag: str | None = None,
         sort: Literal["recent", "read", "year", "title"] = "recent",
         page: int = Query(1, ge=1),
@@ -262,6 +269,8 @@ def create_app(config=None):
                         )
                     )
                 )
+            if unfiled:
+                stmt = stmt.where(~Paper.id.in_(select(paper_collections.c.paper_id)))
             if tag:
                 stmt = stmt.where(
                     Paper.id.in_(select(paper_tags.c.paper_id).where(paper_tags.c.tag_id == tag))
@@ -344,10 +353,22 @@ def create_app(config=None):
                         else (Collection, paper_collections, "collection_id")
                     )
                     session.execute(delete(association).where(association.c.paper_id == paper.id))
-                    for name in set(n.strip().casefold() for n in value if n.strip()):
+                    names = {}
+                    for item in value:
+                        if item.strip():
+                            name = folder_name(item) if model == Collection else item.strip().casefold()
+                            names[name.casefold()] = name
+                    for name in names.values():
                         if len(name) > 80:
                             raise HTTPException(422, "标签或集合名称过长")
-                        row = session.scalar(select(model).where(model.name == name))
+                        row = next(
+                            (
+                                r
+                                for r in session.scalars(select(model))
+                                if r.name.casefold() == name.casefold()
+                            ),
+                            None,
+                        )
                         if not row:
                             row = model(id=uid(), name=name)
                             session.add(row)
@@ -357,6 +378,7 @@ def create_app(config=None):
                     setattr(paper, key, value)
             paper.updated_at = now()
             session.commit()
+            folder_sync.request()
             return serialize(session, paper)
 
     @app.delete("/api/v1/papers/{paper_id}")
@@ -373,6 +395,7 @@ def create_app(config=None):
             delete_assets(config, paper.id)
             session.delete(paper)
             session.commit()
+        folder_sync.request()
         return {"deleted": True}
 
     @app.post("/api/v1/papers/{paper_id}/fetch-metadata", status_code=202)
@@ -405,6 +428,7 @@ def create_app(config=None):
             with import_lock, sessions() as session:
                 paper = paper_or_404(session, paper_id)
                 paper, dedupe = ingest(config, session, stage, canonical + ".pdf", paper)
+                folder_sync.request()
                 return {"paper": serialize(session, paper), "dedupe": dedupe}
         except (ValueError, __import__("httpx").HTTPError) as exc:
             raise HTTPException(502, "PDF 下载失败，请检查网络或稍后重试") from exc
@@ -499,34 +523,65 @@ def create_app(config=None):
         def listing():
             with sessions() as session:
                 return [
-                    {"id": row.id, "name": row.name}
+                    {
+                        "id": row.id,
+                        "name": row.name,
+                        **(
+                            {
+                                "paper_count": len(
+                                    list(
+                                        session.scalars(
+                                            select(paper_collections.c.paper_id).where(
+                                                paper_collections.c.collection_id == row.id
+                                            )
+                                        )
+                                    )
+                                ),
+                                "finder_path": str(folder_sync.directory(row)),
+                            }
+                            if model == Collection
+                            else {}
+                        ),
+                    }
                     for row in session.scalars(select(model).order_by(model.name))
                 ]
 
         def create(body: NameInput):
             with import_lock, sessions() as session:
-                name = body.name.strip().casefold()
+                name = folder_name(body.name) if model == Collection else body.name.strip().casefold()
                 if not name:
                     raise HTTPException(422, "名称不能为空")
-                row = session.scalar(select(model).where(model.name == name))
+                row = next(
+                    (r for r in session.scalars(select(model)) if r.name.casefold() == name.casefold()), None
+                )
                 if not row:
                     row = model(id=uid(), name=name)
                     session.add(row)
                     session.commit()
+                    if model == Collection:
+                        folder_sync.request()
                 return {"id": row.id, "name": row.name}
 
         def rename(item_id: UUID, body: NameInput):
-            with sessions() as session:
+            with import_lock, sessions() as session:
                 row = session.get(model, str(item_id))
                 if not row:
                     raise HTTPException(404, "分类不存在")
-                row.name = body.name.strip().casefold()
+                name = folder_name(body.name) if model == Collection else body.name.strip().casefold()
+                if any(
+                    r.id != row.id and r.name.casefold() == name.casefold()
+                    for r in session.scalars(select(model))
+                ):
+                    raise HTTPException(409, "名称已存在")
+                row.name = name
                 if not row.name:
                     raise HTTPException(422, "名称不能为空")
                 try:
                     session.commit()
                 except IntegrityError as exc:
                     raise HTTPException(409, "名称已存在") from exc
+                if model == Collection:
+                    folder_sync.request()
                 return {"id": row.id, "name": row.name}
 
         def remove(item_id: UUID):
@@ -536,6 +591,8 @@ def create_app(config=None):
                     raise HTTPException(404, "分类不存在")
                 session.delete(row)
                 session.commit()
+                if model == Collection:
+                    folder_sync.request()
                 return {"deleted": True}
 
         app.add_api_route("/api/v1/" + kind, listing, methods=["GET"])
@@ -546,12 +603,48 @@ def create_app(config=None):
     register_taxonomy("tags", Tag)
     register_taxonomy("collections", Collection)
 
+    @app.exception_handler(FolderConflict)
+    async def invalid_folder(request, exc):
+        return JSONResponse({"error": {"code": "FOLDER_CONFLICT", "message": str(exc)}}, 422)
+
+    @app.post("/api/v1/collections/sync")
+    def retry_folder_sync():
+        folder_sync.request()
+        return {"status": "queued"}
+
+    @app.post("/api/v1/collections/{item_id}/reveal")
+    def reveal_folder(item_id: UUID):
+        import subprocess
+        import sys
+
+        with sessions() as session:
+            row = session.get(Collection, str(item_id))
+            if not row:
+                raise HTTPException(404, "文件夹不存在")
+            folder_sync.root  # Refuse a symlinked root before revealing any path.
+            path = folder_sync.directory(row)
+            if path.is_symlink() or not path.is_dir() or folder_sync.manifest(path)["id"] != row.id:
+                raise HTTPException(409, "Finder 文件夹尚未同步，请等待或重试同步")
+        if sys.platform != "darwin":
+            raise HTTPException(501, "自动打开 Finder 仅支持 macOS")
+        try:
+            subprocess.run(["/usr/bin/open", str(path)], check=True, timeout=5, capture_output=True)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise HTTPException(503, "无法打开 Finder，请按显示的路径手动打开") from exc
+        return {"opened": True}
+
     @app.get("/api/v1/settings")
     def get_settings():
         with sessions() as session:
             return settings(session) | {
                 "marker_available": bool(worker.executable()),
                 "data_dir": str(config.data_dir),
+                "folders_root": str(config.data_dir / "folders"),
+                "folder_sync": (
+                    session.get(Setting, "folder_sync").value
+                    if session.get(Setting, "folder_sync")
+                    else {"status": "queued", "error": None}
+                ),
             }
 
     @app.patch("/api/v1/settings")

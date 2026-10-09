@@ -266,3 +266,9 @@ paperflow/
 - 退出 Web 服务时：停止接收新 job，合理中断/结束转换 worker，数据库状态可恢复；操作系统异常杀死进程也不会破坏现有成功产物。
 - 内存限制：不要重复启动 Marker 进程/加载模型；队列长度可以无限吗？需要限制提交频率，处理小规模个体使用即可。
 - 重要说明：README 明确告知 Marker 初次模型下载可能较大、Apple Silicon 内存限制、离线不可首次推理。转换失败须能提示“查看诊断/切换 fast/检查可用内存”。
+
+## 2026-10-10 · 文件夹与 Finder（用户新增要求）
+
+沿用 collections/paper_collections 作为逻辑分类，前端使用“文件夹”名称；无需迁移已有数据。应用内分类变更和 PDF 下载完成触发独立后台 FolderSync，Setting.folder_sync 持久化 queued/running/succeeded/failed，启动重新对账。真实目录为 data_dir/folders/<name>，独立 PDF 副本及 .paperflow.json 管理清单。原始资产与 Reader/Marker 仍使用 UUID 路径。POST /collections/sync 重试；POST /collections/{id}/reveal 在 macOS 打开经校验的受管目录；GET /papers?unfiled=true 筛选未分类。文件夹列表提供 paper_count/finder_path。
+
+这是单向镜像，不监听 Finder 文件变更，不使用硬链接。不覆盖外部同名目录或修改过的副本，删除仅作用于已管理且校验未变的文件，保留额外文件；失败不影响原始阅读。备份包含 folders，恢复后启动对账。完整说明和实际证据见 docs/validation/folders.md。

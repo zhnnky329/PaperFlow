@@ -40,3 +40,11 @@ Starlette 的最外层异常处理会重新抛出异常，可能使 Uvicorn 输�
 保留原有 API、PDF.js 文本层与 HTML 普通 DOM；隐藏重复的成功转换状态，中文显示进行中/失败状态；小屏保留 PDF/HTML/阅读状态操作；无结果提供清除筛选。文件选择改为可见按钮调用隐藏原生 input，首轮 Chrome E2E 暴露同名控件后用 hidden 修正辅助技术树，并实际通过 filechooser 验证。
 
 最终证据：make build/lint/typecheck PASS；make test 在沙箱内 29 passed/1 skipped，具备进程枚举权限后 30 passed（1 个依赖弃用警告），Vitest 3 passed；make e2e 2 passed/6.3s。真实公开论文库的浅/深色、导入、390px、PDF/HTML 页面截图与报告见 docs/validation/ui-polish.md。Read Frog 扩展、macOS 系统辅助功能手动切换仍 NOT RUN，不把外观回归当翻译验收。
+
+## 2026-10-09 · 自定义文件夹与 Finder 目录
+用户明确要求自定义可命名文件夹分类，并对应 Finder 中真实目录。将现有 Collections 的界面改成文件夹，保留已有多对多分类及 UUID 原始 PDF，避免静默迁移/清空用户数据。真实目录位于 data_dir/folders/<名称>，异步单线程将原始 PDF 原子复制到目录，重启重新对账；不使用硬链接，Finder 修改副本不会破坏 PDF Reader/Marker 的原始文件。此同步为应用→Finder，Finder 新文件/移动/改名不反向导入。
+
+目录及副本有管理清单，只删除清单中且校验未变化的 PDF；额外文件和改过的副本保留；拒绝符号链接、路径分隔符、同名外部目录覆盖。同步失败独立持久化并可重试，不阻断原始 PDF。备份包含 folders。新增界面提供命名/计数/筛选、导入目的地、已有论文归类、移出及 Finder 打开入口。无需数据库 schema 变化；Folder Gate 的实际结果在后续验证记录中追加。
+
+## 2026-10-10 · 文件夹验证结果
+文件夹功能完整回归：34 pytest / 3 Vitest / 3 Chrome E2E PASS；真实 FAST-LIO2 在隔离库中通过原生文件选择导入并归类，Finder 副本与原文逐字节一致，实际 macOS open 返回成功。Finder 窗口内容人工检查仍 NOT RUN。根目录 symlink 故障不应使 GET collections/Library 失败，因此查询仅提供路径文本，写入/打开才检查真实边界；专门回归通过。备份恢复包含 PDF 副本及用户额外 note；无数据库迁移、无已知新 P0，既有 Read Frog Gate 保留。详情 docs/validation/folders.md。

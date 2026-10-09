@@ -1,4 +1,9 @@
-export type Label = { id: string; name: string };
+export type Label = {
+  id: string;
+  name: string;
+  paper_count?: number;
+  finder_path?: string;
+};
 export type Job = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -34,6 +39,11 @@ export type Settings = {
   auto_convert_on_import: boolean;
   marker_available: boolean;
   data_dir: string;
+  folders_root: string;
+  folder_sync: {
+    status: "queued" | "running" | "succeeded" | "failed";
+    error: string | null;
+  };
 };
 export type Position = {
   pdf_page: number;
