@@ -3,7 +3,7 @@
 > 规则：完成 = 有代码 + 可复现验证 + 记录证据。禁止将“写好了按钮”视为功能完成。首要 Gate 优先级高于任何 UI 美化。
 
 
-## 实施状态（2026-10-09）
+## 实施状态（2026-10-10）
 
 阶段详细证据见 [docs/validation/milestones.md](docs/validation/milestones.md)。
 
@@ -15,7 +15,7 @@
 | M3 | Chrome 真 PDF.js + 35 页、文本层、第 6 页及 110% 缩放恢复 PASS |
 | M4 | 真 API→Marker→净化发布→缓存→重启 PASS；队列故障/取消/重试/孤儿恢复 PASS |
 | M5 | 8篇真Marker/2篇官方HTML，10篇抽查8可用、2保留排版限制；Chrome图/公式/TOC/进度PASS，插件待人工 |
-| M6 | 配置/备份恢复/启动文档/依赖锁定完成；按两项设计 skill 优化 UI，真实截图和回归见 [UI 验证](docs/validation/ui-polish.md)；全新机器安装 NOT RUN |
+| M6 | 配置/备份恢复/启动文档/依赖锁定完成；README 按公开使用文档重写，用户选定 MIT 并添加 LICENSE、Marker 致谢；按两项设计 skill 优化 UI，真实截图和回归见 [UI 验证](docs/validation/ui-polish.md)；全新机器安装 NOT RUN |
 | M7 | lint/typecheck/Pytest 34/Vitest 3/Chrome E2E 3 PASS；发布 Gate 仍未关闭 |
 
 ## 全局完成定义（Definition of Done）

@@ -1,138 +1,259 @@
 # PaperFlow
 
-macOS 上运行的本地论文 Library、PDF.js 阅读器与 Marker HTML 阅读器。React/TypeScript/Vite + FastAPI/SQLAlchemy/Alembic/SQLite；默认只监听 `127.0.0.1:8000`。不需要账户、Docker 或云数据库。
+**PaperFlow是一个本地论文管理与阅读工具，**将 PDF 和 arXiv 链接放进同一个论文库，按自己的文件夹分类，在原始 PDF 和 HTML 之间切换，下一次打开时继续阅读。
 
-**当前是可运行的开发版本，尚未完成 V1 发布验收。** 8 篇不同论文真实 Marker fast、API→HTML→缓存→重启链路通过。10 篇质量抽查有 8 篇可用（含2篇真实官方HTML），Attention/ResNet复杂排版保留PDF对照；见 [质量记录](docs/validation/quality-readability.md)。Chrome Read Frog + 用户 DeepSeek 双语人工 Gate 仍 NOT RUN。证据、真实截图和阻断见 [阶段记录](docs/validation/milestones.md)、[Marker/Read Frog](docs/validation/marker-readfrog.md) 和 [验收状态](docs/validation/acceptance.md)。
+应用在本机运行，通过浏览器访问。论文、分类和阅读进度保存在自己的电脑上，不需要账户或云数据库。主要面向 macOS Apple Silicon，目前处于开发阶段。
 
-## 本机当前启动
+[快速开始](#快速开始) · [使用说明](#使用说明) · [配置 Marker](#配置-marker) · [备份与恢复](#备份与恢复) · [MIT License](LICENSE)
 
-本会话已建立 `.venv`、`.marker-venv`、前端 production build；在这个已有 checkout：
+![PaperFlow 论文库](docs/validation/ui/folders-real.png)
 
-```sh
-make serve
-# Chrome 打开 http://127.0.0.1:8000
-# Ctrl-C 停止
-```
+*截图使用公开论文测试库，新安装不会预置论文。*
 
-`make serve` 不依赖 Node，也不预加载模型。本机 ignored `.env` 已配置真实 Marker/llama-server 和持久模型缓存路径；全新安装需按下文配置。仅启动 API 而未 build 时首页会提示构建前端，Library 不会伪造数据。
+## 功能
 
-## 全新安装（Apple Silicon）
+- **PDF 与 arXiv 导入**：支持拖拽、文件选择、链接和 ID；重复 PDF 按内容去重，论文信息可手动编辑。
+- **文件夹和标签**：自定义分类名称，一篇论文可以放入多个文件夹；分类对应 Finder 中的真实目录。
+- **PDF 阅读**：保留原始排版，支持页码跳转、缩放、适配宽度和文本选择，自动保存阅读位置。
+- **HTML 阅读**：优先提供可用的 arXiv 官方 HTML；本地 PDF 可以通过 Marker 转换，支持目录、公式、图片和表格。
+- **搜索与阅读状态**：搜索标题、作者、arXiv ID 和标签，按时间、年份或标题排序，标记未读、阅读中和已读。
+- **本地存储**：数据重启后保留，支持备份恢复；已有 PDF 和本地 HTML 可以离线阅读。
 
-Python 3.12 和 Node 24 LTS（含 npm）建议作为开发环境；应用支持 Python >=3.11。macOS 自带 `/usr/bin/python3` 可能过旧。可利用已有 conda：
+
+
+## 快速开始
+
+
+
+### 环境要求
+
+- Python **3.11 或更高版本**，推荐 3.12。
+- Node.js **24 LTS**，包含 npm，用于安装和构建前端。
+- Git、make，以及一个现代浏览器。
+
+如果使用 conda，可以先准备 Python 环境：
 
 ```sh
 conda create -n paperflow python=3.12 -y
 conda activate paperflow
-# 安装 Node 24 LTS 并确认 node/npm 在 PATH 后：
-python --version
-node --version
-npm --version
-make install PYTHON=python
-make build
+```
+
+下面的 `python3` 应指向这个环境或其他已安装的 Python 3.11+，而不是 macOS 自带的旧版本。
+
+### 安装并启动
+
+```sh
+git clone https://github.com/zhnnky329/PaperFlow.git
+cd PaperFlow
+
+make install PYTHON=python3
 cp .env.example .env
-make doctor
+make build
 make serve
 ```
 
-本机验证使用 conda markitdown 的 Python 3.12.13 创建 venv，Node 24.19.0 来自 Codex bundled runtime；依赖已锁定到 `backend/requirements.lock` 与 `frontend/package-lock.json`。上面的全新 conda 安装步骤没有在第二台机器执行，标记 NOT RUN；已有环境的依赖安装、build、serve 和测试已实际执行。
+打开 **[http://127.0.0.1:8000](http://127.0.0.1:8000)** 即可使用。终端保持运行，按 `Ctrl-C` 停止服务。关闭浏览器标签页不会停止应用。
 
-开发模式：`make dev` 启动 API 8000 与 Vite 5173，打开 `http://127.0.0.1:5173`。固定开发代理端口 8000；生产端口可用 `.env` 的 `PAPERFLOW_PORT` 配置。HTTP 写操作通过同源 Origin 与 `X-PaperFlow` 标记校验，不开放 CORS；从 curl 调用写 API 也要带这两项。
+这一步不需要安装 Marker，可以先导入论文、建立分类和阅读 PDF。需要本地 HTML 时，再按下文配置转换器。
 
-## Marker（独立环境，按需加载）
+### 日常启动与更新
 
-不把 PyTorch 装进轻量 API 环境。锁定当前已验证的官方源码提交及其依赖：
+以后在项目目录运行：
 
 ```sh
-python -m venv .marker-venv
-.marker-venv/bin/python -m pip install -r backend/marker-requirements.lock
-# Marker 2.0.0 / Surya 0.22.1 的公式、OCR 在 Apple Silicon 需要：
-brew install llama.cpp
-.marker-venv/bin/marker_single --help
+make serve
 ```
 
-在 `.env` 设置（使用你 checkout 的实际绝对路径）：
+构建完成后，日常运行不需要 Node.js，也不会在启动时加载模型。更新源码后，先停止服务、备份论文库，再重新安装依赖并构建；保留已有 `.env`：
+
+```sh
+make install PYTHON=python3
+make build
+make serve
+```
+
+
+
+## 使用说明
+
+
+
+### 添加论文
+
+点击右上角 **Add Paper**，选择导入方式：
+
+- **PDF**：把文件拖入弹窗，或点击“选择 PDF 文件”。支持一次导入多篇，默认单文件上限为 100 MB。文件会复制到论文库，原文件不会被移动或修改。
+- **arXiv**：粘贴论文链接或 ID，例如 `https://arxiv.org/abs/2107.06829`、`2107.06829` 或 `2107.06829v1`。应用会在后台获取标题、作者和摘要。
+
+arXiv 导入默认只保存条目和链接。看到 **Remote only** 时，点击该论文的 **PDF**，再点击 **Download PDF**，下载后即可离线阅读。元信息获取失败不会丢失条目，可以点击“重试元信息”，也可以自行编辑。
+
+### 按文件夹分类
+
+点击侧栏“文件夹”旁的 **+**，创建自己的分类，例如“SLAM”“运动规划”或“准备精读”。
+
+进入文件夹后点击 **Add Paper**，新论文默认存入当前分类。已有论文点击 **归类**，勾选一个或多个文件夹并保存；取消全部勾选后，论文会出现在“未分类”中。文件夹旁的 **…** 用于重命名和删除，删除分类会保留论文。
+
+进入分类后，点击 **在 Finder 中打开**，可以看到对应的 PDF 目录：
+
+```text
+~/Library/Application Support/PaperFlow/folders/<文件夹名称>/
+```
+
+Finder 中保存的是独立副本，阅读器仍使用论文库中的原始 PDF。一篇论文放入多个分类会保存多份副本；远程条目下载 PDF 后才会生成副本。
+
+分类在 PaperFlow 中管理，Finder 中新增、移动或改名的文件不会反向导入。修改过的副本和额外文件会保留；发生同步冲突时，按提示处理后点击“重试 Finder 同步”。目前文件夹不支持嵌套。
+
+### 阅读论文
+
+
+| 入口                    | 适合什么场景             | 阅读进度            |
+| --------------------- | ------------------ | --------------- |
+| **PDF**               | 查看原始排版，核对公式和图表     | 保存页码、缩放和滚动位置    |
+| **Official HTML ↗**   | 阅读 arXiv 提供的官方网页版本 | 外部标签页打开，不记录滚动位置 |
+| **HTML / Local HTML** | 连续阅读转换后的正文，调整字号和宽度 | 保存章节和滚动位置       |
+
+
+官方 HTML 只有确认可访问后才会提供。没有本地 HTML 时，点击 **Convert**，完成后会出现 **HTML** 按钮。转换期间可以继续阅读 PDF；转换结果不理想时，也可以随时回到原文。
+
+HTML 阅读页可以配合浏览器翻译插件使用。
+
+### 管理论文库
+
+论文行右侧可以修改阅读状态。点击 **…** 编辑标题、作者、年份、摘要、来源链接和标签，也可以删除论文。删除会再次确认，只清理该条目在 PaperFlow 数据目录内的资产，不会删除最初导入的原文件。
+
+按 `/` 聚焦搜索，按 `Esc` 关闭弹窗。在 **Settings** 中可以调整浅色 / 深色主题、HTML 字号、正文宽度，以及转换模式和自动转换选项。
+
+## 配置 Marker
+
+PaperFlow 使用 [Marker](https://github.com/datalab-to/marker) 在本机将 PDF 转成 HTML。转换器安装在独立环境中，只有点击转换时才运行。
+
+### 1. 安装转换器
+
+在项目目录中，用前面准备好的 Python 执行：
+
+```sh
+python3 -m venv .marker-venv
+.marker-venv/bin/python -m pip install -r backend/marker-requirements.lock
+```
+
+当前依赖锁定为 Marker 2.0.0 / Surya 0.22.1。Apple Silicon 上的公式识别和 OCR 还需要 llama.cpp 提供的 `llama-server`。如果使用 Homebrew：
+
+```sh
+brew install llama.cpp
+command -v llama-server
+```
+
+也可以使用 [llama.cpp 官方二进制](https://github.com/ggml-org/llama.cpp/releases)。测试环境使用的是 b11523 arm64 官方二进制；Homebrew 安装方式尚未实测。
+
+### 2. 设置路径
+
+编辑项目根目录的 `.env`，填写自己机器上的绝对路径，路径包含空格时保留引号：
 
 ```dotenv
 PAPERFLOW_MARKER_EXECUTABLE="/absolute/path/PaperFlow/.marker-venv/bin/marker_single"
-# 若 llama-server 不在 PATH，设置真实二进制绝对路径：
 LLAMA_CPP_BINARY="/opt/homebrew/bin/llama-server"
-# 可选，模型缓存持久保存在库外，不提交 Git：
-# HF_HOME="/Users/you/Library/Caches/PaperFlow/models"
 ```
 
-本会话安装了项目内官方 llama.cpp b11523 到 `.tools/llama/llama-b11523/llama-server`（已核对官方 SHA256），没有修改系统 Homebrew。可使用该绝对路径；`.tools` 被 Git 忽略。Marker 源码来自官方 commit `e7c67f1d239ea6a805cbf4ed6c6b2056d435e22d`，原用户 `marker/` checkout 保留不改。
+`LLAMA_CPP_BINARY` 使用 `command -v llama-server` 返回的实际路径。如果希望指定模型缓存位置，还可以加入：
 
-首次真实 fast 转换下载约 1.8GB 模型缓存，网络、可用内存和首次模型初始化会影响耗时。模型懒加载；离线不能首次下载。默认 fast、单队列、并发 1，不启用 `--use_llm`，不发送论文到付费 LLM 转换 API。模型/CLI/llama-server 缺失时 PDF 和 Library 可照常使用，转换失败可重试。若内存不足，关闭其他重应用或取消当前任务；不保证任意论文的公式重建完美。
+```dotenv
+HF_HOME="/Users/you/Library/Caches/PaperFlow/models"
+```
 
-## 日常使用
+重启应用，在 **Settings → Conversion** 检查是否检测到 Marker。运行 `make doctor` 可以检查配置路径，不会加载模型。
 
-- Add Paper：拖入多个 PDF 或文件选择；真实签名/解析/大小验证，复制入库，SHA-256 去重。arXiv `abs/pdf/html` URL 或新旧 ID 可直接收藏，latest 与显式版本分别去重。
-- 元信息后台获取失败仍保留草稿，可重试；官方 HTML 只有真实 GET 验证后才展示。远端 HTML 新标签打开，**不追踪外部页面滚动**。arXiv 条目默认 Remote only，进入 PDF Reader 可 Download PDF 缓存。
-- Library：标题、作者、年份、摘要和来源链接编辑，多标签/多集合，搜索/筛选/排序和阅读状态。`/` 聚焦搜索，`Esc` 关闭弹层；删除有明确二次确认，只删除当前论文在库内的资产。
-- PDF.js：连续滚动、页码导航、缩放、适配宽度、可选择文本；保存当前页与比例，刷新/重启恢复。原 PDF 始终保留。
-- Convert：后台任务 queued/running/succeeded/failed/canceled；取消/重试/缓存。已有 HTML 仅在新产物成功后替换引用。CLI 超时默认 1800s 可配置；异常退出重启时孤儿 running 标为 interrupted，可重试。
-- Local HTML：独立 `/read/<id>/html` 普通 DOM；目录、净化图片、表格、原生 MathML / 本地 KaTeX，字号/宽度、系统暗色和阅读进度。HTML 转换问题可随时回 PDF。
+### 3. 转换与重试
 
-## Read Frog + DeepSeek
+在论文行点击 **Convert**。任务在后台排队，一次转换一篇；运行中可以取消，失败可以重试。已有 HTML 可以点击“重建 HTML”，新结果成功前会保留旧版本。
 
-在你常用的 Chrome 安装/启用 Read Frog，密钥只配置在扩展内。PaperFlow 不索取、不读取、不存储插件 Key，也不保存插件译文。
+默认使用 **Fast** 模式，导入后自动转换默认关闭。首次转换需要联网下载模型，已测试环境的模型缓存约为 1.8 GB，初始化会比后续转换慢。耗时取决于论文内容和机器配置。
 
-1. 启动 PaperFlow，在 Chrome 打开 `http://127.0.0.1:8000`。
-2. 导入含公式/图片的 PDF，真实转换成功后打开 Local HTML。
-3. 在 Read Frog 中选择你已配置的 DeepSeek，使用扩展 popup 的 Translate 或段落翻译入口。不要在 PaperFlow 中寻找虚构的扩展 SDK 按钮。
-4. 如果扩展不出现，检查该站点权限并刷新页面；普通 localhost HTTP 不需要 `file://` 权限。参见 [官方指南](https://www.readfrog.app/en/docs/local-files)。
-5. 按 [人工 Gate 清单](docs/validation/marker-readfrog.md) 验证 Abstract、Method、公式、图片、表格、双语布局并记录 Chrome/Read Frog 版本。
+复杂公式、跨页表格和双栏排版可能出现识别错误，重要内容请对照 PDF。样本与转换效果见 [阅读质量记录](docs/validation/quality-readability.md)。
 
-翻译会把选定文本发给你配置的服务，可能产生 Token 费用，须主动操作。本会话未调用 DeepSeek；翻译验收 NOT RUN。若实际失败且 DOM/CSP 调整仍无法修复，按 ARCHITECTURE §9 启用服务端密钥、段落缓存和公式保护的原生 fallback；当前该分支未激活，发布 Gate 保持阻断。
+## 数据与配置
 
-## 自定义文件夹与 Finder
+默认数据目录为：
 
-点击侧栏文件夹旁的 `+` 创建并命名分类。进入文件夹后 Add Paper 默认导入到这里；已有论文点击“归类”选择文件夹，全部取消则回到“未分类”。文件夹支持重命名和二次确认删除，删除分类会保留论文原文。
+```text
+~/Library/Application Support/PaperFlow/
+```
 
-文件夹会后台同步为 `~/Library/Application Support/PaperFlow/folders/<名称>/` 的真实目录（自定义 data dir 时位于该目录的 folders 下），可点击“在 Finder 中打开”。保存独立 PDF 副本，多文件夹各占一份磁盘空间；原始 PDF 继续用于阅读和转换。远程条目下载 PDF 后才生成副本。同步方向是应用到 Finder；Finder 新增/移动/改名不反向导入。修改过的副本与额外文件保留，冲突显示错误并可重试。截图、自动化和真实 macOS 验证见 [文件夹验证](docs/validation/folders.md)。
+数据库、PDF、生成的 HTML、图片和 Finder 分类目录都保存在这里。实际位置可以在 **Settings → Storage & recovery** 查看。
 
-## 数据、备份与恢复
+常用配置写在 `.env` 中，修改后重启生效：
 
-默认数据：`~/Library/Application Support/PaperFlow`，可在 `.env` 用 `PAPERFLOW_DATA_DIR` 指定。数据库使用 WAL 和 Alembic 迁移，启动不清库。PDF/HTML/图片都在受控 UUID 路径；不依赖导入原文件继续存在。不要把数据目录放进 Git。
+
+| 配置                         | 默认值    | 用途                 |
+| -------------------------- | ------ | ------------------ |
+| `PAPERFLOW_DATA_DIR`       | 上述数据目录 | 自定义存储位置，使用绝对路径     |
+| `PAPERFLOW_PORT`           | `8000` | 服务端口               |
+| `PAPERFLOW_MARKER_TIMEOUT` | `1800` | 单次转换超时，单位为秒        |
+| `PAPERFLOW_MAX_UPLOAD_MB`  | `100`  | 单个 PDF 上传上限，单位为 MB |
+
+
+更换数据目录不会自动迁移已有论文库。需要搬迁时，先备份，再恢复到新目录。服务只监听 `127.0.0.1`，已缓存的论文可以离线阅读；arXiv 获取和首次模型下载需要网络。
+
+## 备份与恢复
+
+先停止应用，再运行：
 
 ```sh
-# 先 Ctrl-C 停止应用，备份 API 拒绝运行中的数据库/资产拷贝
 make backup
-# 或显式指定：
-.venv/bin/python scripts/backup.py backup --data-dir "/path/to/data" --archive "/path/to/paperflow.zip"
-# 先恢复到一个不存在的新目录（不覆盖个人 Library）：
-.venv/bin/python scripts/backup.py restore --archive "/path/to/paperflow.zip" --target "/path/to/restored-data"
-# 然后将 PAPERFLOW_DATA_DIR 指向 restored-data，make serve 验证
 ```
 
-备份通过 SQLite backup API 取得一致数据库快照，包含所有论文资产和 Finder 文件夹（含额外文件），附 SHA256 清单；恢复验证 ZIP 路径、哈希、SQLite integrity。不能只复制 `paperflow.sqlite3` 而遗漏 WAL；升级前备份，保留旧目录直到验证完成。
+归档默认放在数据目录的 `backups/` 下，命令会打印完整路径。备份包含数据库、论文资产和 Finder 分类目录，包括其中的额外文件；不包含 `.env`、Python 环境或模型缓存。建议把 ZIP 再复制到另一块磁盘。
 
-## 真实验证入口
+需要指定备份位置时：
 
 ```sh
+.venv/bin/python scripts/backup.py backup \
+  --data-dir "/path/to/data" \
+  --archive "/path/to/paperflow-backup.zip"
+```
+
+保持应用停止，将备份恢复到一个**尚不存在的新目录**：
+
+```sh
+.venv/bin/python scripts/backup.py restore \
+  --archive "/path/to/paperflow-backup.zip" \
+  --target "/path/to/restored-data"
+```
+
+然后把 `.env` 中的 `PAPERFLOW_DATA_DIR` 指向恢复目录，运行 `make serve`，检查论文、分类和阅读位置。恢复会校验文件和数据库；不要只复制 `paperflow.sqlite3` 来备份。
+
+## 常见问题
+
+**页面打不开，或提示端口被占用？** 检查终端里的服务是否仍在运行，先停止之前的实例。改过 `PAPERFLOW_PORT` 时，浏览器地址也要使用对应端口。
+
+**首页只有 “PaperFlow API ready”？** 前端尚未构建，执行 `make build` 后刷新。
+
+**Marker 没检测到，或转换失败？** 运行 `make doctor`，检查 `Configured Marker` 和 `Configured llama-server` 的路径，再核对网络、磁盘空间和可用内存。转换器在独立环境中，诊断里后端的 `marker-pdf: MISSING` 是正常的。中断任务在重启后可以重试，原始 PDF 保留。
+
+## 开发与反馈
+
+前端使用 React、TypeScript、Vite 和 PDF.js；后端使用 FastAPI、SQLAlchemy、Alembic 和 SQLite。依赖分别锁定在 `frontend/package-lock.json` 与 `backend/requirements.lock`。
+
+```sh
+make dev        # 前端 http://127.0.0.1:5173，后端 8000
 make lint
 make typecheck
-make test
-# 先停止已有 make serve/dev（E2E 独占 8000 端口）：
-make e2e                 # 先 build，生成 35 页测试 PDF 到 /tmp，使用隔离 headless Chrome
-# 机器需安装 Chrome；或在 playwright.config.ts 调整为已安装的 Chromium
-# 可选慢速真 Marker Gate（不调用翻译）：
-.venv/bin/python scripts/marker_gate.py --executable "/path/to/marker_single" --pdf "/path/to/paper.pdf" --output "/tmp/paperflow-gate"
-.venv/bin/python scripts/validate_real.py --pdf "/path/to/paper.pdf" --data-dir "/tmp/paperflow-real-test" --executable "/path/to/marker_single" --report "/tmp/report.json"
-# 较慢：8 个本地 Marker 任务 + 2 篇官方 HTML；仍需 PDF 对照阅读质量
-.venv/bin/python scripts/quality_gate.py --data-dir "/tmp/paperflow-quality-gate" --report "/tmp/quality-report.json"
+make test       # pytest + Vitest
+make build
+make e2e        # Chrome 浏览器测试
 ```
 
-fake CLI 仅用于自动化队列故障测试，不作为 Marker 品质证据。Read Frog/DeepSeek 需用户 Chrome 人工验证，不能用 headless Chrome 测试冒充。没有私人 PDF、模型、密钥或 Library 提交到 Git。10 篇质量已实际抽查，不是逐页逐式校对；首次全新机器安装仍待执行。
+`make dev` 和 `make serve` 不要同时运行。E2E 使用独立测试库，需要已安装的 Chrome，运行前先释放 8000 端口。
 
-## 界面验证
+当前仍是开发版本，全新机器安装尚未验证。已执行的测试、环境和待验证项目见 [验收记录](docs/validation/acceptance.md)，实现说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。目前没有 PDF 全文搜索、笔记、云同步或多人账户。
 
-Library、导入弹窗、设置和阅读器支持系统字体、浅/深色、即时按压反馈及减少动态效果；窄屏保留 PDF/HTML 和阅读状态操作。真实 Chrome 截图与可复现命令见 [UI 验证记录](docs/validation/ui-polish.md)。`scripts/capture_ui.mjs` 应仅对隔离的真实论文验证库运行，会保存该库的阅读进度。
+欢迎通过 [Issues](https://github.com/zhnnky329/PaperFlow/issues) 反馈问题或提出建议。报告问题时请附系统版本、复现步骤和错误提示；转换问题可补充论文来源与 Marker 模式。不要提交私人论文、密钥或个人数据库。
 
-## Known limitations
+## 许可证
 
-- V1 发布阻断：Read Frog 人工双语与完整双语关服重启验收；未经执行不能宣称翻译完成。
-- Marker 复杂公式/表格可能有结构缺陷；始终提供 PDF 对照，未承诺秒级转换或像素级还原。
-- 真实 arXiv 网络的 API/HTML 可能受地区/429/超时影响；失败保留条目并可重试，自动化网络用 mock 可重复验证。真实网络证据见验收报告。
-- PDF 受损/加密文件拒绝导入；当前不提供 PDF 全文搜索、批量分类或笔记（P1）。
-- 项目尚未选定开源 LICENSE。Marker 代码 Apache-2.0，模型权重有单独条款；Read Frog 独立扩展不捆绑。发布前核对依赖/模型许可证，不捆绑论文/权重。
+PaperFlow 使用 [MIT License](LICENSE)。第三方依赖和模型权重遵循各自的许可证。
+
+## 致谢
+
+感谢 [Marker](https://github.com/datalab-to/marker) 的作者与贡献者。PaperFlow 的 PDF 转 HTML 功能基于 Marker，论文中的正文、公式、图片和表格由它提取，再交给本地阅读器展示。
+
+也感谢 [PDF.js](https://github.com/mozilla/pdf.js) 和 [KaTeX](https://github.com/KaTeX/KaTeX)，分别提供 PDF 渲染和公式显示。

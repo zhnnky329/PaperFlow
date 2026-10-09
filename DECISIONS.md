@@ -48,3 +48,8 @@ Starlette 的最外层异常处理会重新抛出异常，可能使 Uvicorn 输�
 
 ## 2026-10-10 · 文件夹验证结果
 文件夹功能完整回归：34 pytest / 3 Vitest / 3 Chrome E2E PASS；真实 FAST-LIO2 在隔离库中通过原生文件选择导入并归类，Finder 副本与原文逐字节一致，实际 macOS open 返回成功。Finder 窗口内容人工检查仍 NOT RUN。根目录 symlink 故障不应使 GET collections/Library 失败，因此查询仅提供路径文本，写入/打开才检查真实边界；专门回归通过。备份恢复包含 PDF 副本及用户额外 note；无数据库迁移、无已知新 P0，既有 Read Frog Gate 保留。详情 docs/validation/folders.md。
+
+## 2026-10-10 · MIT 许可证与公开使用文档
+用户明确选用 MIT 许可证。根目录添加 LICENSE，正文采用 SPDX 的标准 MIT 文本，版权署名为仓库所有者 zhnnky329；README 链接该许可证并在末尾致谢 Marker。MIT 适用于 PaperFlow 自身，第三方依赖及模型权重仍遵循其上游许可，不重新授权或捆绑模型。
+
+参考 Memos、Zettlr 和 Marker 的 README，按项目介绍、安装、操作步骤、可选转换配置、备份和开发组织文档。浏览器插件只保留一句使用提示；详细测试状态继续保存在 docs/validation，不改变尚未执行的验收结论。本次验证：本地链接及目录锚点、10 个 Shell 示例的 sh -n 语法、Make target 名称、LICENSE 与 SPDX MIT 正文核对、git diff --check 均 PASS；仅修改文档与许可证，未重复运行应用回归。
