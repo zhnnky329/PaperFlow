@@ -28,3 +28,27 @@ marker/
 frontend/*.tsbuildinfo
 backend/app/reader_static/katex.min.*
 backend/app/reader_static/fonts/
+
+# Local development specifications and validation artifacts
+/AGENTS.md
+/PRD.md
+/ARCHITECTURE.md
+/DESIGN.md
+/TASKS.md
+/TEST_PLAN.md
+/REFERENCES.md
+/DECISIONS.md
+/PaperFlow_V1_Codex_Package/
+/docs/validation/
+
+# Local one-off development checks and capture tools
+/scripts/capture_real.mjs
+/scripts/capture_ui.mjs
+/scripts/marker_gate.py
+/scripts/quality_browser.mjs
+/scripts/quality_contact.py
+/scripts/quality_gate.py
+/scripts/recovery_gate.py
+/scripts/validate_arxiv_browser.mjs
+/scripts/validate_folders.mjs
+/scripts/validate_real.py

@@ -1,6 +1,0 @@
-{
-  "vite": "PASS",
-  "proxy_health": "PASS",
-  "same_origin_mutation": "PASS",
-  "model_lazy_start": "PASS"
-}
