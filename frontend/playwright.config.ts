@@ -14,7 +14,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "../.venv/bin/python ../scripts/run.py serve",
+    command: "../.venv/bin/python ../scripts/run.py serve --no-open",
     url: "http://127.0.0.1:8000/api/v1/health",
     reuseExistingServer: false,
     env: {
