@@ -44,3 +44,26 @@ def test_restore_rejects_zip_slip(tmp_path):
         output.writestr("../../escape", "bad")
     with pytest.raises(ValueError, match="Unsafe"):
         module.restore(archive, tmp_path / "restored")
+
+
+def test_restored_finder_baseline_reconciles_offline_rename(config, pdf_bytes, tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    config.metadata_online = False
+    headers = {"Origin": "http://127.0.0.1:8000", "X-PaperFlow": "1"}
+    with TestClient(create_app(config), base_url="http://127.0.0.1:8000", headers=headers) as client:
+        paper = upload(client, pdf_bytes)
+        client.patch("/api/v1/papers/" + paper["id"], json={"collections": ["Before Restore"]})
+        folder = config.data_dir / "folders/Before Restore"
+        eventually(lambda: bool(list(folder.glob("*.pdf"))))
+    archive = module.backup(config.data_dir, tmp_path / "backup.zip")
+    restored = module.restore(archive, tmp_path / "restored")
+    folder = restored / "folders/Before Restore"
+    folder.rename(folder.with_name("After Restore"))
+    restored_config = config.model_copy(update={"data_dir": restored})
+    with TestClient(create_app(restored_config), base_url="http://127.0.0.1:8000", headers=headers) as client:
+        endpoint = "/api/v1/papers/" + paper["id"]
+        eventually(lambda: client.get(endpoint).json()["collections"][0]["name"] == "After Restore")
+        assert client.get(endpoint + "/pdf").content == pdf_bytes
+        assert client.get("/api/v1/papers").json()["total"] == 1

@@ -168,6 +168,13 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           setPapers(result.items);
           setTotal(result.total);
           setCollections(groups);
+          if (
+            collection &&
+            collection !== "unfiled" &&
+            !groups.some((group) => group.id === collection)
+          ) {
+            setSearchParams({});
+          }
           setConfig((prev) =>
             JSON.stringify(prev) === JSON.stringify(preferences)
               ? prev
@@ -189,7 +196,16 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       alive = false;
       clearInterval(interval);
     };
-  }, [debounced, status, collection, tag, sort, page, revision]);
+  }, [
+    debounced,
+    status,
+    collection,
+    tag,
+    sort,
+    page,
+    revision,
+    setSearchParams,
+  ]);
   async function action(operation: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -620,9 +636,13 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   <h3>Finder 文件夹</h3>
                   <p className="storage-path">{config.folders_root}</p>
                   <p>
-                    应用内文件夹自动同步为这里的同名目录，保存独立 PDF
-                    副本。Finder
-                    中新增、移动或改名的文件不会反向导入；修改过的副本及额外文件会保留。
+                    应用与这里的一级文件夹双向同步。Finder 中新增 PDF
+                    会导入论文库，移动或复制会更新分类，文件夹改名也会同步。
+                    删除副本只取消该分类，论文原文和阅读进度保留。
+                  </p>
+                  <p>
+                    文件名可以自己改，论文标题仍以详情中的元信息为准。PDF
+                    内容改动会提示冲突；将修改版另存为新文件名即可作为另一篇导入。
                   </p>
                   <p>
                     PDF 会复制至这个目录。停止应用后运行 make backup；恢复用

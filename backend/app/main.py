@@ -51,8 +51,8 @@ def create_app(config=None):
     config = config or Config()
     engine, sessions = database(config)
     worker = Worker(config, sessions)
-    folder_sync = FolderSync(config, sessions)
     import_lock = threading.RLock()
+    folder_sync = FolderSync(config, sessions, import_lock)
     metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="metadata")
     metadata_pending = set()
     metadata_lock = threading.Lock()
@@ -90,6 +90,16 @@ def create_app(config=None):
         future.add_done_callback(finish)
         return True
 
+    def finder_imported(paper_id):
+        scheduled = schedule_metadata(paper_id)
+        with worker.lock, import_lock, sessions() as session:
+            paper = session.get(Paper, paper_id)
+            if paper and settings(session)["auto_convert_on_import"] and worker.executable():
+                worker.enqueue(session, paper)
+        return scheduled
+
+    folder_sync.on_import = finder_imported
+
     @asynccontextmanager
     async def lifespan(app):
         lock_file = (config.data_dir / "server.lock").open("a+")
@@ -114,9 +124,9 @@ def create_app(config=None):
         try:
             yield
         finally:
+            folder_sync.stop()
             metadata_pool.shutdown(wait=True, cancel_futures=True)
             worker.stop()
-            folder_sync.stop()
             logger.removeHandler(handler)
             handler.close()
             engine.dispose()
@@ -334,11 +344,9 @@ def create_app(config=None):
                 os.fsync(output.fileno())
             with import_lock, sessions() as session:
                 paper, dedupe = ingest(config, session, stage, file.filename or "Untitled.pdf")
-                if not dedupe and settings(session)["auto_convert_on_import"] and worker.executable():
-                    worker.enqueue(session, paper)
                 result = {"paper": serialize(session, paper), "dedupe": dedupe}
             if not dedupe:
-                result["paper"]["metadata_status"] = "pending" if schedule_metadata(paper.id) else "failed"
+                result["paper"]["metadata_status"] = "pending" if finder_imported(paper.id) else "failed"
             return result
         finally:
             stage.unlink(missing_ok=True)
@@ -647,7 +655,7 @@ def create_app(config=None):
                 return {"id": row.id, "name": row.name}
 
         def remove(item_id: UUID):
-            with sessions() as session:
+            with import_lock, sessions() as session:
                 row = session.get(model, str(item_id))
                 if not row:
                     raise HTTPException(404, "分类不存在")
@@ -671,7 +679,7 @@ def create_app(config=None):
 
     @app.post("/api/v1/collections/sync")
     def retry_folder_sync():
-        folder_sync.request()
+        folder_sync.request(retry=True)
         return {"status": "queued"}
 
     @app.post("/api/v1/collections/{item_id}/reveal")

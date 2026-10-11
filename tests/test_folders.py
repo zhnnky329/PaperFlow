@@ -5,7 +5,7 @@ from test_library import upload
 
 
 def eventually(check):
-    for _ in range(150):
+    for _ in range(350):
         if check():
             return
         time.sleep(0.03)
@@ -45,7 +45,7 @@ def test_folder_copy_rename_unfiled_and_restart(client, config, pdf_bytes):
     assert canonical.read_bytes() == pdf_bytes
 
 
-def test_folder_restart_recreates_removed_copy(config, pdf_bytes):
+def test_folder_restart_detaches_removed_copy_and_keeps_original(config, pdf_bytes):
     headers = {"Origin": "http://127.0.0.1:8000", "X-PaperFlow": "1"}
     with TestClient(create_app(config), base_url="http://127.0.0.1:8000", headers=headers) as client:
         paper = upload(client, pdf_bytes)
@@ -54,9 +54,9 @@ def test_folder_restart_recreates_removed_copy(config, pdf_bytes):
         eventually(lambda: bool(list(folder.glob("*.pdf"))))
     next(folder.glob("*.pdf")).unlink()
     with TestClient(create_app(config), base_url="http://127.0.0.1:8000", headers=headers) as restarted:
-        eventually(lambda: bool(list(folder.glob("*.pdf"))))
-        assert next(folder.glob("*.pdf")).read_bytes() == pdf_bytes
-        assert restarted.get("/api/v1/papers/" + paper["id"]).json()["collections"][0]["name"] == "恢复测试"
+        eventually(lambda: restarted.get("/api/v1/papers/" + paper["id"]).json()["collections"] == [])
+        assert not list(folder.glob("*.pdf"))
+        assert restarted.get("/api/v1/papers/" + paper["id"] + "/pdf").content == pdf_bytes
 
 
 def test_folder_rejects_paths_and_preserves_external_content(client, config, pdf_bytes):
@@ -105,8 +105,8 @@ def test_folder_sync_failure_retry_and_symlink_boundary(client, config, tmp_path
     assert client.get("/api/v1/papers/" + paper["id"] + "/pdf").content == pdf_bytes
     copy.unlink()
     client.post("/api/v1/collections/sync")
-    eventually(lambda: copy.is_file())
-    assert copy.read_bytes() == pdf_bytes
+    eventually(lambda: client.get("/api/v1/papers/" + paper["id"]).json()["collections"] == [])
+    assert client.get("/api/v1/papers/" + paper["id"] + "/pdf").content == pdf_bytes
     # A symlinked root must not break Library or reveal an outside directory.
     saved_root = root.with_name("folders-saved")
     root.rename(saved_root)

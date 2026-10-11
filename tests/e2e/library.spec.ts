@@ -295,3 +295,75 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
   await page.screenshot({ path: "../docs/validation/publication-sources.png" });
   await page.getByRole("button", { name: "关闭", exact: true }).click();
 });
+
+test("Finder import → rename → move → remove classification in the live Library", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const settings = await (await request.get("/api/v1/settings")).json();
+  expect(settings.data_dir).toContain("paperflow-e2e-");
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const first = path.join(settings.folders_root, "Finder 新增");
+  const second = path.join(settings.folders_root, "Finder 移动");
+  await fs.mkdir(first);
+  const fixture = await fs.readFile("/tmp/paperflow-e2e.pdf");
+  await fs.writeFile(
+    path.join(first, "paper.pdf"),
+    Buffer.concat([fixture, Buffer.from("\n% Finder import fixture")]),
+  );
+  const nav = page.getByRole("navigation");
+  await expect(nav.getByRole("link", { name: /Finder 新增/ })).toBeVisible({
+    timeout: 15000,
+  });
+  const folders = await (await request.get("/api/v1/collections")).json();
+  const folder = folders.find(
+    (item: { name: string }) => item.name === "Finder 新增",
+  );
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await request.get(`/api/v1/papers?collection=${folder.id}`)
+          ).json()
+        ).total,
+    )
+    .toBe(1);
+  const paper = (
+    await (await request.get(`/api/v1/papers?collection=${folder.id}`)).json()
+  ).items[0];
+  await nav.getByRole("link", { name: /Finder 新增/ }).click();
+  await expect(page.locator(".paper-row")).toHaveCount(1);
+  const renamed = path.join(settings.folders_root, "Finder 改名");
+  await fs.rename(
+    path.join(first, "paper.pdf"),
+    path.join(first, "my filename.pdf"),
+  );
+  await fs.rename(first, renamed);
+  await expect(
+    page.getByRole("heading", { name: /Finder 改名/ }),
+  ).toBeVisible();
+  await expect(page.locator(".paper-title")).toHaveText(paper.title);
+  await fs.mkdir(second);
+  await fs.rename(
+    path.join(renamed, "my filename.pdf"),
+    path.join(second, "moved.pdf"),
+  );
+  await expect(page.locator(".paper-row")).toHaveCount(0);
+  await nav.getByRole("link", { name: /Finder 移动/ }).click();
+  await expect(page.locator(".paper-row")).toHaveCount(1);
+  await page.screenshot({ path: "../docs/validation/finder-two-way.png" });
+  await fs.unlink(path.join(second, "moved.pdf"));
+  await expect(page.locator(".paper-row")).toHaveCount(0);
+  const retained = await (
+    await request.get(`/api/v1/papers/${paper.id}`)
+  ).json();
+  expect(retained.has_pdf).toBe(true);
+  expect(retained.collections).toEqual([]);
+  const original = await request.get(`/api/v1/papers/${paper.id}/pdf`);
+  expect(original.status()).toBe(200);
+  await fs.rm(second, { recursive: true });
+  await expect(nav.getByRole("link", { name: /Finder 移动/ })).toHaveCount(0);
+});
