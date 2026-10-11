@@ -61,6 +61,24 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       kind: "tags" | "collections";
       item?: Label;
     } | null>(null);
+  const [detailsDirty, setDetailsDirty] = useState(false);
+  useEffect(() => setDetailsDirty(false), [edit?.id]);
+  useEffect(() => {
+    if (!edit || edit.metadata_status !== "pending" || detailsDirty) return;
+    let alive = true;
+    const id = edit.id;
+    const interval = setInterval(() => {
+      api<Paper>(`/papers/${id}`)
+        .then((fresh) => {
+          if (alive && fresh.metadata_status !== "pending") setEdit(fresh);
+        })
+        .catch(() => {});
+    }, 1000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
+  }, [edit, detailsDirty]);
   const [revision, setRevision] = useState(0),
     [name, setName] = useState("");
   const input = useRef<HTMLInputElement>(null),
@@ -757,6 +775,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                           : "作者待补全"}
                         {p.authors.length > 3 ? " 等" : ""}{" "}
                         <span>{p.year || "年份待补全"}</span>
+                        {p.venue && <span>{p.venue}</span>}
                         {p.arxiv_id && (
                           <span>
                             arXiv:{p.arxiv_id}
@@ -794,6 +813,11 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                         ))}
                         {p.metadata_status === "pending" && (
                           <span className="muted">元信息获取中…</span>
+                        )}
+                        {p.metadata_status === "needs_review" && (
+                          <Button variant="ghost" onClick={() => setEdit(p)}>
+                            核对元信息
+                          </Button>
                         )}
                         {p.metadata_status === "failed" && (
                           <Button
@@ -1077,7 +1101,73 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       )}
       {edit && (
         <Modal title="论文详情" close={() => setEdit(null)}>
+          <div className="metadata-summary">
+            <p className="muted">
+              手动修改的内容会保留。识别优先使用论文中的 DOI 或 arXiv
+              ID；标题检索结果需要核对。
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={
+                busy || detailsDirty || edit.metadata_status === "pending"
+              }
+              onClick={() =>
+                action(async () => {
+                  await api(`/papers/${edit.id}/fetch-metadata`, {
+                    method: "POST",
+                  });
+                  setEdit(null);
+                  setNotice("正在后台查找元信息，完成后可打开论文详情查看。");
+                })
+              }
+            >
+              {edit.metadata_status === "pending"
+                ? "元信息获取中…"
+                : "查找元信息"}
+            </Button>
+            {detailsDirty && (
+              <p className="muted">保存更改后可以重新查找元信息。</p>
+            )}
+            {edit.metadata_error && (
+              <p className="muted">{edit.metadata_error}</p>
+            )}
+            {edit.metadata_candidates.map((candidate) => (
+              <div className="metadata-candidate" key={candidate.doi}>
+                <strong>{candidate.title}</strong>
+                <p>
+                  {candidate.authors.slice(0, 3).join(", ")} ·{" "}
+                  {candidate.year || "年份未知"}
+                </p>
+                <p>{candidate.venue || "发表信息未提供"}</p>
+                <a
+                  href={`https://doi.org/${encodeURIComponent(candidate.doi)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {candidate.doi}
+                </a>
+                <Button
+                  type="button"
+                  disabled={busy || detailsDirty}
+                  onClick={() =>
+                    action(async () => {
+                      await api(`/papers/${edit.id}/metadata-choice`, {
+                        method: "POST",
+                        body: JSON.stringify({ doi: candidate.doi }),
+                      });
+                      setEdit(null);
+                    })
+                  }
+                >
+                  采用这条信息
+                </Button>
+              </div>
+            ))}
+          </div>
           <form
+            key={`${edit.id}-${edit.updated_at}`}
+            onChange={() => setDetailsDirty(true)}
             onSubmit={(e) => {
               e.preventDefault();
               const data = new FormData(e.currentTarget);
@@ -1093,6 +1183,19 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     year: data.get("year") ? Number(data.get("year")) : null,
                     abstract: data.get("abstract"),
                     source_url: String(data.get("source_url")) || null,
+                    doi: String(data.get("doi")) || null,
+                    venue: String(data.get("venue")) || null,
+                    venue_kind: String(data.get("venue_kind")) || null,
+                    affiliations: String(data.get("affiliations"))
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                      .map(
+                        (name) =>
+                          edit.affiliations.find(
+                            (item) => item.name === name,
+                          ) || { name, authors: [] },
+                      ),
                     tags: String(data.get("tags")).split(",").filter(Boolean),
                   }),
                 });
@@ -1126,6 +1229,72 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 defaultValue={edit.source_url || ""}
               />
             </label>
+            <label className="field">
+              DOI
+              <input
+                name="doi"
+                maxLength={300}
+                defaultValue={edit.doi || ""}
+                placeholder="10.xxxx/…"
+              />
+            </label>
+            <label className="field">
+              会议／期刊
+              <input
+                name="venue"
+                maxLength={1000}
+                defaultValue={edit.venue || ""}
+              />
+            </label>
+            <label className="field">
+              发表类型
+              <select
+                name="venue_kind"
+                aria-label="发表类型"
+                defaultValue={edit.venue_kind || ""}
+              >
+                <option value="">未确定</option>
+                <option value="conference">会议</option>
+                <option value="journal">期刊</option>
+              </select>
+            </label>
+            <label className="field">
+              单位（每行一个）
+              <textarea
+                name="affiliations"
+                aria-label="单位（每行一个）"
+                rows={3}
+                defaultValue={edit.affiliations
+                  .map((item) => item.name)
+                  .join("\n")}
+              />
+            </label>
+            {edit.affiliations
+              .filter((item) => item.authors.length)
+              .map((item) => (
+                <p className="muted" key={item.name}>
+                  {item.authors.join(", ")}：{item.name}
+                </p>
+              ))}
+            {Object.keys(edit.metadata_sources).length > 0 && (
+              <p className="muted metadata-sources">
+                信息来源：
+                {Array.from(new Set(Object.values(edit.metadata_sources)))
+                  .map(
+                    (source) =>
+                      ({
+                        pdf: "PDF",
+                        filename: "文件名",
+                        arxiv: "arXiv",
+                        crossref: "Crossref",
+                        "crossref-confirmed": "Crossref（已核对）",
+                        manual: "手动填写",
+                        legacy: "原有信息",
+                      })[source] || source,
+                  )
+                  .join("、")}
+              </p>
+            )}
             <label className="field">
               摘要
               <textarea name="abstract" rows={4} defaultValue={edit.abstract} />

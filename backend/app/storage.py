@@ -33,7 +33,12 @@ def ingest(config, session, source: Path, filename: str, paper=None):
     existing = session.scalar(select(Paper).where(Paper.pdf_sha256 == digest))
     if existing:
         return existing, True
-    paper = paper or Paper(id=uid(), title=title or Path(filename).stem[:1000] or "Untitled", authors=authors)
+    paper = paper or Paper(
+        id=uid(),
+        title=title or Path(filename).stem[:1000] or "Untitled",
+        authors=authors,
+        metadata_sources={"title": "pdf" if title else "filename", **({"authors": "pdf"} if authors else {})},
+    )
     relative = f"papers/{paper.id}/original.pdf"
     target = config.path(relative)
     target.parent.mkdir(parents=True, exist_ok=True)

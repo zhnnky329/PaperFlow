@@ -31,11 +31,19 @@ from .db import (
     now,
     uid,
 )
-from .schemas import PaperPatch, ArxivInput, NameInput, ReadingPosition, SettingsPatch, ConvertInput
+from .schemas import (
+    PaperPatch,
+    ArxivInput,
+    NameInput,
+    ReadingPosition,
+    SettingsPatch,
+    ConvertInput,
+    MetadataChoice,
+)
 from .storage import ingest, delete_assets
 from .worker import Worker, settings, job_dict
 from .html import reader_document
-from . import arxiv
+from . import arxiv, metadata
 from .folders import FolderSync, FolderConflict, folder_name
 
 
@@ -45,23 +53,42 @@ def create_app(config=None):
     worker = Worker(config, sessions)
     folder_sync = FolderSync(config, sessions)
     import_lock = threading.RLock()
-    metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="arxiv")
+    metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="metadata")
     metadata_pending = set()
     metadata_lock = threading.Lock()
 
-    def schedule_metadata(paper_id):
-        with metadata_lock:
-            if paper_id in metadata_pending or len(metadata_pending) >= 30:
-                return
+    def schedule_metadata(paper_id, search=False):
+        with metadata_lock, import_lock, sessions() as session:
+            if paper_id in metadata_pending:
+                return True
+            paper = session.get(Paper, paper_id)
+            if not paper:
+                return False
+            if len(metadata_pending) >= 30:
+                paper.metadata_error = "元信息队列已满，请稍后重试。"
+                paper.metadata_status = "failed"
+                session.commit()
+                return False
+            paper.metadata_status = "pending"
+            paper.metadata_error = None
+            session.commit()
             metadata_pending.add(paper_id)
-        future = metadata_pool.submit(arxiv.refresh, sessions, paper_id)
+        future = metadata_pool.submit(metadata.refresh, config, sessions, paper_id, import_lock, search)
 
-        def finish(_):
+        def finish(future):
+            if future.cancelled() or future.exception():
+                with import_lock, sessions() as session:
+                    paper = session.get(Paper, paper_id)
+                    if paper:
+                        paper.metadata_status = "failed"
+                        paper.metadata_error = "元信息识别未完成，请重试或手动填写。"
+                        session.commit()
             with metadata_lock:
                 metadata_pending.discard(paper_id)
             folder_sync.request()
 
         future.add_done_callback(finish)
+        return True
 
     @asynccontextmanager
     async def lifespan(app):
@@ -87,9 +114,9 @@ def create_app(config=None):
         try:
             yield
         finally:
+            metadata_pool.shutdown(wait=True, cancel_futures=True)
             worker.stop()
             folder_sync.stop()
-            metadata_pool.shutdown(wait=True, cancel_futures=True)
             logger.removeHandler(handler)
             handler.close()
             engine.dispose()
@@ -256,6 +283,9 @@ def create_app(config=None):
                         Paper.title.ilike(pattern, escape="\\"),
                         Paper.authors.cast(__import__("sqlalchemy").String).ilike(pattern, escape="\\"),
                         Paper.arxiv_id.ilike(pattern, escape="\\"),
+                        Paper.doi.ilike(pattern, escape="\\"),
+                        Paper.venue.ilike(pattern, escape="\\"),
+                        Paper.affiliations.cast(__import__("sqlalchemy").String).ilike(pattern, escape="\\"),
                         Paper.id.in_(tagged),
                     )
                 )
@@ -305,7 +335,10 @@ def create_app(config=None):
                 paper, dedupe = ingest(config, session, stage, file.filename or "Untitled.pdf")
                 if not dedupe and settings(session)["auto_convert_on_import"] and worker.executable():
                     worker.enqueue(session, paper)
-                return {"paper": serialize(session, paper), "dedupe": dedupe}
+                result = {"paper": serialize(session, paper), "dedupe": dedupe}
+            if not dedupe:
+                result["paper"]["metadata_status"] = "pending" if schedule_metadata(paper.id) else "failed"
+            return result
         finally:
             stage.unlink(missing_ok=True)
             file.file.close()
@@ -375,7 +408,14 @@ def create_app(config=None):
                             session.flush()
                         session.execute(association.insert().values(paper_id=paper.id, **{fk: row.id}))
                 elif value is not None or key in ("year", "source_url"):
+                    if key in metadata.FIELDS and getattr(paper, key) != value:
+                        paper.metadata_sources = dict(paper.metadata_sources or {}) | {key: "manual"}
                     setattr(paper, key, value)
+                elif key in ("doi", "venue", "venue_kind", "affiliations"):
+                    cleared = [] if key == "affiliations" else None
+                    if getattr(paper, key) != cleared:
+                        paper.metadata_sources = dict(paper.metadata_sources or {}) | {key: "manual"}
+                    setattr(paper, key, cleared)
             paper.updated_at = now()
             session.commit()
             folder_sync.request()
@@ -400,14 +440,29 @@ def create_app(config=None):
 
     @app.post("/api/v1/papers/{paper_id}/fetch-metadata", status_code=202)
     def fetch_metadata(paper_id: UUID):
+        if not config.metadata_online:
+            raise HTTPException(409, "联网元信息查询已关闭，请在 .env 中开启 PAPERFLOW_METADATA_ONLINE")
         with sessions() as session:
-            paper = paper_or_404(session, paper_id)
-            if not paper.arxiv_id:
-                raise HTTPException(409, "此论文没有 arXiv ID")
-            paper.metadata_status = "pending"
-            session.commit()
-        schedule_metadata(str(paper_id))
+            paper_or_404(session, paper_id)
+        if not schedule_metadata(str(paper_id), search=True):
+            raise HTTPException(503, "元信息队列已满，请稍后重试")
         return {"status": "pending"}
+
+    @app.post("/api/v1/papers/{paper_id}/metadata-choice")
+    def choose_metadata(paper_id: UUID, body: MetadataChoice):
+        with import_lock, sessions() as session:
+            paper = paper_or_404(session, paper_id)
+            candidate = next((item for item in paper.metadata_candidates if item["doi"] == body.doi), None)
+            if not candidate:
+                raise HTTPException(409, "候选已变化，请重新查找元信息")
+            metadata.apply_values(paper, candidate, "crossref-confirmed")
+            paper.metadata_candidates = []
+            paper.metadata_status = "ready"
+            paper.metadata_error = None
+            session.commit()
+            result = serialize(session, paper)
+        folder_sync.request()
+        return result
 
     @app.post("/api/v1/papers/{paper_id}/download-pdf")
     def download_pdf(paper_id: UUID):
@@ -429,7 +484,9 @@ def create_app(config=None):
                 paper = paper_or_404(session, paper_id)
                 paper, dedupe = ingest(config, session, stage, canonical + ".pdf", paper)
                 folder_sync.request()
-                return {"paper": serialize(session, paper), "dedupe": dedupe}
+                result = {"paper": serialize(session, paper), "dedupe": dedupe}
+            schedule_metadata(paper.id)
+            return result
         except (ValueError, __import__("httpx").HTTPError) as exc:
             raise HTTPException(502, "PDF 下载失败，请检查网络或稍后重试") from exc
         finally:

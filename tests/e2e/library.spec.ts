@@ -29,8 +29,31 @@ test("real Library → upload → edit → PDF.js → progress → delete", asyn
     .getByRole("button", { name: "编辑 PaperFlow Test Research" })
     .click();
   await page.getByLabel("标题", { exact: true }).fill("SLAM Reading");
+  await page.getByLabel("会议／期刊", { exact: true }).fill("Robotics Journal");
+  await page.getByLabel("发表类型", { exact: true }).selectOption("journal");
+  await page
+    .getByLabel("单位（每行一个）", { exact: true })
+    .fill("Research University");
+  await page.getByLabel("DOI", { exact: true }).fill("10.1234/manual-test");
+  await expect(
+    page.getByRole("button", { name: /查找元信息|元信息获取中/ }),
+  ).toBeDisabled();
   await page.getByLabel("Tags（逗号分隔）").fill("robotics");
   await page.getByRole("button", { name: "保存更改" }).click();
+  await page
+    .getByRole("button", { name: "编辑 SLAM Reading", exact: true })
+    .click();
+  await expect(page.getByLabel("会议／期刊", { exact: true })).toHaveValue(
+    "Robotics Journal",
+  );
+  await expect(
+    page.getByLabel("单位（每行一个）", { exact: true }),
+  ).toHaveValue("Research University");
+  await expect(page.getByLabel("DOI", { exact: true })).toHaveValue(
+    "10.1234/manual-test",
+  );
+  await page.screenshot({ path: "../docs/validation/metadata-details.png" });
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(
     page.getByRole("link", { name: "SLAM Reading", exact: true }),
   ).toBeVisible();
@@ -170,4 +193,69 @@ test("folder management → classify → Finder copies → rename → unfiled", 
     .getByRole("button", { name: "确认删除文件夹（保留论文）", exact: true })
     .click();
   await expect(page.locator(".paper-row")).toHaveCount(1);
+});
+
+test("cached metadata search → candidate confirmation → persisted details", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const settings = await (await request.get("/api/v1/settings")).json();
+  expect(settings.data_dir).toContain("paperflow-e2e-");
+  const papers = await (await request.get("/api/v1/papers")).json();
+  const paper = papers.items[0];
+  const { execFileSync } = await import("node:child_process");
+  // A deposited Crossref response fixture in the isolated test library's cache.
+  // The real worker, API, SQLite and UI still process/confirm this candidate.
+  execFileSync("../.venv/bin/python", [
+    "-c",
+    `
+import hashlib, json, sqlite3, sys, time
+from pathlib import Path
+query = {"title": sys.argv[2], "author": sys.argv[3]}
+key = "metadata-cache:" + hashlib.sha256(json.dumps(query, sort_keys=True).encode()).hexdigest()
+record = {"doi":"10.1234/confirmed", "title":sys.argv[2], "authors":[sys.argv[3]], "year":2025,
+          "venue":"Robotics Conference", "venue_kind":"conference",
+          "affiliations":[{"name":"Example University", "authors":[sys.argv[3]]}]}
+with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
+    database.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)",
+                     (key, json.dumps({"time":time.time(), "result":[record]})))
+`,
+    settings.data_dir,
+    paper.title,
+    paper.authors[0],
+  ]);
+  const started = await request.post(
+    `/api/v1/papers/${paper.id}/fetch-metadata`,
+    {
+      headers: { Origin: new URL(page.url()).origin, "X-PaperFlow": "1" },
+    },
+  );
+  expect(started.status()).toBe(202);
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get(`/api/v1/papers/${paper.id}`)).json())
+          .metadata_status,
+    )
+    .toBe("needs_review");
+  await page.goto("/");
+  await page.getByRole("button", { name: "核对元信息", exact: true }).click();
+  await expect(page.locator(".metadata-candidate")).toContainText(
+    "Robotics Conference",
+  );
+  await page.getByRole("button", { name: "采用这条信息", exact: true }).click();
+  await page
+    .getByRole("button", { name: `编辑 ${paper.title}`, exact: true })
+    .click();
+  await expect(page.getByLabel("DOI", { exact: true })).toHaveValue(
+    "10.1234/confirmed",
+  );
+  await expect(
+    page.getByLabel("单位（每行一个）", { exact: true }),
+  ).toHaveValue("Example University");
+  await expect(page.getByLabel("会议／期刊", { exact: true })).toHaveValue(
+    "Robotics Conference",
+  );
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
 });

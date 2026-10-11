@@ -25,11 +25,28 @@ export type Paper = {
   has_html: boolean;
   read_status: "unread" | "reading" | "finished";
   metadata_status: string;
+  doi: string | null;
+  venue: string | null;
+  venue_kind: "journal" | "conference" | null;
+  affiliations: { name: string; authors: string[] }[];
+  metadata_sources: Record<string, string>;
+  metadata_candidates: MetadataCandidate[];
+  metadata_error: string | null;
   created_at: string;
+  updated_at: string;
   last_read_at: string | null;
   tags: Label[];
   collections: Label[];
   conversion: Job | null;
+};
+export type MetadataCandidate = {
+  doi: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string | null;
+  venue_kind: "journal" | "conference" | null;
+  affiliations: Paper["affiliations"];
 };
 export type Settings = {
   theme: "system" | "light" | "dark";

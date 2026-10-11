@@ -2,6 +2,22 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class Affiliation(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+    authors: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("authors")
+    @classmethod
+    def bounded_authors(cls, value):
+        if any(len(name) > 500 for name in value):
+            raise ValueError("Author name too long")
+        return value
+
+
+class MetadataChoice(BaseModel):
+    doi: str = Field(min_length=1, max_length=300)
+
+
 class PaperPatch(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=1000)
     authors: list[str] | None = Field(None, max_length=100)
@@ -11,6 +27,22 @@ class PaperPatch(BaseModel):
     read_status: Literal["unread", "reading", "finished"] | None = None
     tags: list[str] | None = Field(None, max_length=100)
     collections: list[str] | None = Field(None, max_length=100)
+    doi: str | None = Field(None, max_length=300)
+    venue: str | None = Field(None, max_length=1000)
+    venue_kind: Literal["journal", "conference"] | None = None
+    affiliations: list[Affiliation] | None = Field(None, max_length=100)
+
+    @field_validator("doi")
+    @classmethod
+    def valid_doi(cls, value):
+        from .metadata import normalize_doi
+
+        if not value:
+            return None
+        normalized = normalize_doi(value)
+        if normalized is None:
+            raise ValueError("Invalid DOI")
+        return normalized
 
     @field_validator("source_url")
     @classmethod

@@ -15,6 +15,7 @@ class Config(BaseSettings):
     marker_executable: str = "marker_single"
     marker_timeout: int = 1800
     max_upload_mb: int = 100
+    metadata_online: bool = True
 
     def path(self, relative: str) -> Path:
         base = self.data_dir.resolve()

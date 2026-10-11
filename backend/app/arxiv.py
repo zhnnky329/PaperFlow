@@ -95,12 +95,7 @@ def request(url, limit=2_000_000, destination=None):
         raise ValueError("Too many redirects")
 
 
-def refresh(session_factory, paper_id):
-    with session_factory() as session:
-        paper = session.get(Paper, paper_id)
-        if not paper:
-            return
-        canonical = paper.arxiv_id + (f"v{paper.arxiv_version}" if paper.arxiv_version else "")
+def lookup(canonical):
     values = {"metadata_status": "failed", "updated_at": now()}
     try:
         raw, _, _ = request("https://export.arxiv.org/api/query?id_list=" + canonical)
@@ -116,6 +111,17 @@ def refresh(session_factory, paper_id):
                     year=int(entry.findtext(ns + "published")[:4]),
                     metadata_status="ready",
                 )
+                extra = "{http://arxiv.org/schemas/atom}"
+                values["affiliations"] = [
+                    {"name": text.strip()[:500], "authors": [author.findtext(ns + "name", "")[:500]]}
+                    for author in entry.findall(ns + "author")
+                    for text in [author.findtext(extra + "affiliation", "")]
+                    if text.strip()
+                ][:100]
+                if entry.findtext(extra + "doi"):
+                    values["doi"] = entry.findtext(extra + "doi")[:300]
+                if entry.findtext(extra + "journal_ref"):
+                    values["venue"] = entry.findtext(extra + "journal_ref")[:1000]
     except (httpx.HTTPError, ValueError, TypeError, ParseError, DefusedXmlException):
         pass
     try:
@@ -126,9 +132,24 @@ def refresh(session_factory, paper_id):
             values["official_html_url"] = None
     except (httpx.HTTPError, ValueError):
         pass  # don't discard a previously verified URL for transient network failure
+    return values
+
+
+def refresh(session_factory, paper_id):
+    # Retained for the standalone arXiv service and its regression tests.
+    from .metadata import apply_values
+
+    with session_factory() as session:
+        paper = session.get(Paper, paper_id)
+        if not paper:
+            return
+        canonical = paper.arxiv_id + (f"v{paper.arxiv_version}" if paper.arxiv_version else "")
+    values = lookup(canonical)
     with session_factory() as session:
         paper = session.get(Paper, paper_id)
         if paper:
-            for key, value in values.items():
-                setattr(paper, key, value)
+            apply_values(paper, values, "arxiv")
+            paper.metadata_status = values["metadata_status"]
+            if "official_html_url" in values:
+                paper.official_html_url = values["official_html_url"]
             session.commit()
