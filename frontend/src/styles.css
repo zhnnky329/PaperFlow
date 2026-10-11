@@ -467,6 +467,23 @@ kbd {
   margin-left: 12px;
   white-space: nowrap;
 }
+.paper-info > p .publication-source {
+  margin-left: 12px;
+}
+.publication-source {
+  overflow-wrap: anywhere;
+}
+a.publication-source:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.publication-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
 .paper-meta {
   display: flex;
   align-items: center;

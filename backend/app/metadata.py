@@ -46,6 +46,8 @@ def apply_values(paper, values, source):
         # A less reliable local guess cannot replace official data.
         if source == "pdf" and sources.get(field) in ("arxiv", "crossref"):
             continue
+        if source == "arxiv" and field in ("doi", "venue", "venue_kind") and sources.get(field) == "crossref":
+            continue
         if field == "doi":
             value = normalize_doi(value)
             if not value:
@@ -247,6 +249,30 @@ def normalized(text):
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
 
 
+def is_publication(record):
+    return bool(record.get("venue")) and record.get("venue_kind") in ("journal", "conference")
+
+
+def publication_sources(paper):
+    """Publication and arXiv are independent sources for the same library item."""
+    sources = []
+    if paper.venue:
+        doi = normalize_doi(paper.doi) if paper.doi else None
+        sources.append(
+            {
+                "kind": paper.venue_kind or "publication",
+                "label": paper.venue,
+                "url": "https://doi.org/" + quote(doi, safe="/") if doi else None,
+            }
+        )
+    if paper.arxiv_id:
+        canonical = paper.arxiv_id + (f"v{paper.arxiv_version}" if paper.arxiv_version else "")
+        sources.append(
+            {"kind": "arxiv", "label": "arXiv:" + canonical, "url": "https://arxiv.org/abs/" + canonical}
+        )
+    return sources
+
+
 def match_records(records, title, authors):
     """Crossref search ranking alone is not evidence of the same paper."""
     candidates = []
@@ -261,7 +287,7 @@ def match_records(records, title, authors):
     # share a title and author while referring to different publications.
     return sorted(
         candidates,
-        key=lambda record: (record["match_score"], bool(record["venue"]), record["author_match"]),
+        key=lambda record: (is_publication(record), record["match_score"], record["author_match"]),
         reverse=True,
     )
 
@@ -341,13 +367,28 @@ def refresh(config, sessions, paper_id, lock=None, search=False):
                 else:
                     external = record
                     success = True
+                    # A preprint DOI does not rule out a later journal/conference
+                    # version. Look for that version while retaining arXiv.
+                    if canonical and not is_publication(record):
+                        alternatives = cached_crossref(
+                            sessions,
+                            title=lookup_title,
+                            author=(official.get("authors") or snapshot["authors"] or [None])[0],
+                        )
+                        candidates = match_records(
+                            alternatives, lookup_title, official.get("authors") or snapshot["authors"]
+                        )
             else:
                 candidates = match_records(
                     records, lookup_title, official.get("authors") or snapshot["authors"]
                 )
                 success = True
-                if not candidates:
+                if not candidates and not canonical:
                     error = "未找到可靠的匹配，可补充 DOI 或手动填写。"
+            if canonical:
+                # Keep arXiv as the preprint source rather than suggesting a
+                # second preprint service as a journal/conference publication.
+                candidates = [candidate for candidate in candidates if is_publication(candidate)]
         except (httpx.HTTPError, ValueError, TypeError, KeyError, IndexError):
             error = "发表信息暂时无法获取，请检查网络或稍后重试。"
     with lock or nullcontext(), sessions() as session:

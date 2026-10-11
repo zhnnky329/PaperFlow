@@ -252,6 +252,7 @@ def create_app(config=None):
         result["has_html"] = bool(paper.html_path and config.path(paper.html_path).is_file())
         result["tags"] = taxonomy(session, paper, Tag, paper_tags)
         result["collections"] = taxonomy(session, paper, Collection, paper_collections)
+        result["publication_sources"] = metadata.publication_sources(paper)
         latest = session.scalar(select(Job).where(Job.paper_id == paper.id).order_by(Job.created_at.desc()))
         result["conversion"] = job_dict(latest) if latest else None
         return result
@@ -455,6 +456,10 @@ def create_app(config=None):
             candidate = next((item for item in paper.metadata_candidates if item["doi"] == body.doi), None)
             if not candidate:
                 raise HTTPException(409, "候选已变化，请重新查找元信息")
+            # Explicitly adopting a publication also adopts its DOI. Automatic
+            # refreshes still preserve manual fields, including a cleared DOI.
+            paper.doi = candidate["doi"]
+            paper.metadata_sources = {**(paper.metadata_sources or {}), "doi": "crossref-confirmed"}
             metadata.apply_values(paper, candidate, "crossref-confirmed")
             paper.metadata_candidates = []
             paper.metadata_status = "ready"

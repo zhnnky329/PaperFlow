@@ -27,6 +27,33 @@ import { Modal } from "./components/Modal";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
+
+function PublicationSources({ paper }: { paper: Paper }) {
+  return paper.publication_sources.map((source) => {
+    const label =
+      source.kind === "journal"
+        ? `期刊：${source.label}`
+        : source.kind === "conference"
+          ? `会议：${source.label}`
+          : source.label;
+    return source.url ? (
+      <a
+        className="publication-source"
+        key={source.kind}
+        href={source.url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+    ) : (
+      <span className="publication-source" key={source.kind}>
+        {label}
+      </span>
+    );
+  });
+}
+
 export function App({ settingsPage = false }: { settingsPage?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const collection = searchParams.get("folder") || "";
@@ -775,13 +802,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                           : "作者待补全"}
                         {p.authors.length > 3 ? " 等" : ""}{" "}
                         <span>{p.year || "年份待补全"}</span>
-                        {p.venue && <span>{p.venue}</span>}
-                        {p.arxiv_id && (
-                          <span>
-                            arXiv:{p.arxiv_id}
-                            {p.arxiv_version ? `v${p.arxiv_version}` : ""}
-                          </span>
-                        )}
+                        <PublicationSources paper={p} />
                       </p>
                       <div className="paper-meta">
                         {p.collections.map((c) => (
@@ -1102,6 +1123,11 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
       {edit && (
         <Modal title="论文详情" close={() => setEdit(null)}>
           <div className="metadata-summary">
+            {edit.publication_sources.length > 0 && (
+              <div className="publication-sources">
+                <PublicationSources paper={edit} />
+              </div>
+            )}
             <p className="muted">
               手动修改的内容会保留。识别优先使用论文中的 DOI 或 arXiv
               ID；标题检索结果需要核对。
@@ -1131,6 +1157,12 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             )}
             {edit.metadata_error && (
               <p className="muted">{edit.metadata_error}</p>
+            )}
+            {edit.metadata_candidates.length > 0 && (
+              <p className="muted">
+                正式发表记录优先列出。采用候选会更新 DOI，保留 arXiv
+                和其他手动修改的内容。
+              </p>
             )}
             {edit.metadata_candidates.map((candidate) => (
               <div className="metadata-candidate" key={candidate.doi}>

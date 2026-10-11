@@ -32,6 +32,11 @@ export type Paper = {
   metadata_sources: Record<string, string>;
   metadata_candidates: MetadataCandidate[];
   metadata_error: string | null;
+  publication_sources: {
+    kind: "journal" | "conference" | "publication" | "arxiv";
+    label: string;
+    url: string | null;
+  }[];
   created_at: string;
   updated_at: string;
   last_read_at: string | null;

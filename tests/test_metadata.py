@@ -86,6 +86,9 @@ def test_pdf_identifier_enrichment_cache_manual_protection_and_restart(client, c
     paper = settled(client, paper["id"])
     assert paper["metadata_status"] == "ready"
     assert paper["venue"] == "International Robotics Conference" and paper["venue_kind"] == "conference"
+    assert paper["publication_sources"] == [{
+        "kind": "conference", "label": paper["venue"], "url": "https://doi.org/10.1234/test.1",
+    }]
     assert paper["affiliations"] == [{"name": "Test University", "authors": ["Ada Scientist"]}]
     endpoint = "/api/v1/papers/" + paper["id"]
     assert (
@@ -318,3 +321,93 @@ def test_saving_unfilled_fields_does_not_lock_out_future_enrichment(client, pdf_
     sources = response.json()["metadata_sources"]
     assert sources["title"] == "manual"
     assert all(field not in sources for field in ("doi", "venue", "venue_kind", "affiliations"))
+
+
+@pytest.mark.parametrize("kind", ["journal", "conference", None])
+def test_publication_sources_prefer_formal_record_and_keep_arxiv(client, config, monkeypatch, kind):
+    official = {
+        "title": RECORD["title"][0], "authors": ["Ada Scientist"], "year": 2025,
+        "metadata_status": "ready", "official_html_url": None,
+    }
+    if kind:
+        official["doi"] = RECORD["DOI"]
+    record = dict(RECORD, type="journal-article" if kind == "journal" else "proceedings-article")
+    monkeypatch.setattr(arxiv, "lookup", lambda *args: official)
+    monkeypatch.setattr(metadata, "request_crossref", lambda *args: record if kind else {"items": []})
+    paper_id = client.post("/api/v1/papers/arxiv", json={"input": "2501.00001v2"}).json()["paper"]["id"]
+    paper = settled(client, paper_id)
+    arxiv_source = {
+        "kind": "arxiv", "label": "arXiv:2501.00001v2", "url": "https://arxiv.org/abs/2501.00001v2",
+    }
+    expected = [arxiv_source]
+    if kind:
+        expected.insert(0, {
+            "kind": kind, "label": paper["venue"], "url": "https://doi.org/10.1234/test.1",
+        })
+    assert paper["metadata_status"] == "ready" and paper["metadata_error"] is None
+    assert paper["publication_sources"] == expected
+    assert client.get("/api/v1/papers").json()["items"][0]["publication_sources"] == expected
+    restarted = TestClient(create_app(config), base_url="http://127.0.0.1:8000")
+    assert restarted.get("/api/v1/papers/" + paper_id).json()["publication_sources"] == expected
+
+
+def test_formal_candidates_rank_before_exact_preprint_and_arxiv_ignores_preprints(client, monkeypatch):
+    preprint = metadata.crossref_record(dict(RECORD, DOI="10.1234/preprint", type="posted-content"))
+    formal = metadata.crossref_record(dict(RECORD, title=["A Reliable Robotics Study: Results"]))
+    candidates = metadata.match_records([preprint, formal], RECORD["title"][0], ["Ada Scientist"])
+    assert [record["doi"] for record in candidates] == [formal["doi"], preprint["doi"]]
+    monkeypatch.setattr(arxiv, "lookup", lambda *args: {
+        "title": RECORD["title"][0], "authors": ["Ada Scientist"], "metadata_status": "ready",
+    })
+    monkeypatch.setattr(metadata, "request_crossref", lambda *args: {
+        "items": [dict(RECORD, DOI="10.1234/preprint", type="posted-content")],
+    })
+    paper_id = client.post("/api/v1/papers/arxiv", json={"input": "2501.00001"}).json()["paper"]["id"]
+    paper = settled(client, paper_id)
+    assert paper["metadata_status"] == "ready" and paper["metadata_error"] is None
+    assert paper["metadata_candidates"] == [] and paper["venue"] is None and paper["doi"] is None
+    assert [source["kind"] for source in paper["publication_sources"]] == ["arxiv"]
+
+
+@pytest.mark.parametrize("manual_doi", ["10.1234/preprint", None])
+def test_preprint_doi_finds_publication_and_explicit_choice_updates_doi(client, monkeypatch, manual_doi):
+    preprint = dict(RECORD, DOI="10.1234/preprint", type="posted-content")
+    calls = []
+
+    def crossref(path, params=None):
+        calls.append(path)
+        if path:
+            return preprint if path == "/10.1234%2Fpreprint" else RECORD
+        return {"items": [preprint, RECORD]}
+
+    monkeypatch.setattr(arxiv, "lookup", lambda *args: {
+        "title": RECORD["title"][0], "authors": ["Ada Scientist"],
+        "doi": "10.1234/preprint", "metadata_status": "ready",
+    })
+    monkeypatch.setattr(metadata, "request_crossref", crossref)
+    paper_id = client.post("/api/v1/papers/arxiv", json={"input": "2501.00001"}).json()["paper"]["id"]
+    paper = settled(client, paper_id)
+    assert calls == ["/10.1234%2Fpreprint", ""]
+    assert paper["metadata_status"] == "needs_review" and paper["venue"] is None
+    assert [item["doi"] for item in paper["metadata_candidates"]] == [RECORD["DOI"]]
+    assert [source["kind"] for source in paper["publication_sources"]] == ["arxiv"]
+    endpoint = "/api/v1/papers/" + paper_id
+    client.patch(endpoint, json={"doi": "10.1234/mydoi", "title": "Personal Title"}).raise_for_status()
+    client.patch(endpoint, json={"doi": manual_doi}).raise_for_status()
+    chosen = client.post(endpoint + "/metadata-choice", json={"doi": RECORD["DOI"]}).json()
+    assert chosen["doi"] == RECORD["DOI"] and chosen["title"] == "Personal Title"
+    assert [source["kind"] for source in chosen["publication_sources"]] == ["conference", "arxiv"]
+    assert chosen["publication_sources"][0]["url"] == "https://doi.org/" + RECORD["DOI"]
+    client.post(endpoint + "/fetch-metadata").raise_for_status()
+    refreshed = settled(client, paper_id)
+    assert refreshed["metadata_status"] == "ready"
+    assert refreshed["doi"] == RECORD["DOI"] and refreshed["arxiv_id"] == "2501.00001"
+
+
+def test_arxiv_refresh_does_not_replace_known_publication_doi_or_venue():
+    paper = Paper(
+        title="Study", doi="10.1234/published", venue="Published Journal", venue_kind="journal",
+        metadata_sources={"doi": "crossref", "venue": "crossref", "venue_kind": "crossref"},
+    )
+    metadata.apply_values(paper, {"doi": "10.1234/preprint", "venue": "Older journal reference"}, "arxiv")
+    assert paper.doi == "10.1234/published" and paper.venue == "Published Journal"

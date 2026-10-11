@@ -239,12 +239,44 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
           .metadata_status,
     )
     .toBe("needs_review");
+  // Add an arXiv association in this isolated fixture after the lookup, so
+  // presentation coverage does not depend on an external arXiv request.
+  execFileSync("../.venv/bin/python", [
+    "-c",
+    `
+import sqlite3, sys
+from pathlib import Path
+with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
+    database.execute("UPDATE papers SET arxiv_id=?, arxiv_version=? WHERE id=?",
+                     ("2501.00001", 2, sys.argv[2]))
+`,
+    settings.data_dir,
+    paper.id,
+  ]);
   await page.goto("/");
+  await expect(page.locator(".paper-row .publication-source")).toHaveText([
+    "arXiv:2501.00001v2",
+  ]);
   await page.getByRole("button", { name: "核对元信息", exact: true }).click();
   await expect(page.locator(".metadata-candidate")).toContainText(
     "Robotics Conference",
   );
   await page.getByRole("button", { name: "采用这条信息", exact: true }).click();
+  await expect(page.locator(".paper-row .publication-source")).toHaveText([
+    "会议：Robotics Conference",
+    "arXiv:2501.00001v2",
+  ]);
+  await expect(
+    page.locator(".paper-row .publication-source").first(),
+  ).toHaveAttribute("href", "https://doi.org/10.1234/confirmed");
+  await expect(
+    page.locator(".paper-row .publication-source").last(),
+  ).toHaveAttribute("href", "https://arxiv.org/abs/2501.00001v2");
+  await page.reload();
+  await expect(page.locator(".paper-row .publication-source")).toHaveText([
+    "会议：Robotics Conference",
+    "arXiv:2501.00001v2",
+  ]);
   await page
     .getByRole("button", { name: `编辑 ${paper.title}`, exact: true })
     .click();
@@ -257,5 +289,9 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
   await expect(page.getByLabel("会议／期刊", { exact: true })).toHaveValue(
     "Robotics Conference",
   );
+  await expect(
+    page.locator(".metadata-summary .publication-source"),
+  ).toHaveText(["会议：Robotics Conference", "arXiv:2501.00001v2"]);
+  await page.screenshot({ path: "../docs/validation/publication-sources.png" });
   await page.getByRole("button", { name: "关闭", exact: true }).click();
 });
