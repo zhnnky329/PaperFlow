@@ -320,7 +320,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           <span />
           Local workspace
         </div>
-        <nav>
+        <nav aria-label="论文库导航">
           <Link
             className={
               !settingsPage && !status && !collection
@@ -334,7 +334,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             }}
           >
             <LibraryIcon size={16} />
-            All papers
+            <span className="nav-label">All papers</span>
           </Link>
           {(["unread", "reading", "finished"] as const).map((s) => (
             <Link
@@ -349,7 +349,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               }}
             >
               <span className={"status-dot " + s} />
-              {statusLabel(s)}
+              <span className="nav-label">{statusLabel(s)}</span>
             </Link>
           ))}
           <div className="nav-caption">
@@ -375,7 +375,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             }}
           >
             <Folder size={15} />
-            未分类
+            <span className="nav-label">未分类</span>
           </Link>
           {collections.map((c) => (
             <div className="taxonomy-row" key={c.id}>
@@ -394,7 +394,9 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 }}
               >
                 <Folder size={15} />
-                {c.name}
+                <span className="nav-label" title={c.name}>
+                  {c.name}
+                </span>
                 <span className="folder-count">{c.paper_count ?? 0}</span>
               </Link>
               <Button
@@ -413,15 +415,17 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             className={settingsPage ? "nav-item active" : "nav-item"}
           >
             <SettingsIcon size={16} />
-            Settings
+            <span className="nav-label">Settings</span>
           </Link>
         </div>
       </aside>
       <main className="workspace">
         <header className="workspace-header">
-          <div>
+          <div className="workspace-heading">
             <h1>
-              {heading}
+              <span className="workspace-title" title={heading}>
+                {heading}
+              </span>
               {!settingsPage && <span className="count">{total}</span>}
             </h1>
             <p className="workspace-description">
@@ -690,8 +694,10 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                         to={`/?folder=${c.id}`}
                       >
                         <Folder size={25} />
-                        <strong>{c.name}</strong>
-                        <span>{c.paper_count ?? 0} 篇论文</span>
+                        <div className="folder-card-body">
+                          <strong title={c.name}>{c.name}</strong>
+                          <span>{c.paper_count ?? 0} 篇论文</span>
+                        </div>
                       </Link>
                     ))}
                   </div>
@@ -757,7 +763,23 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               </Button>
             </div>
             {loading ? (
-              <div className="empty">正在读取本地 Library…</div>
+              <div className="library-loading" aria-busy="true">
+                <p className="loading-caption" role="status">
+                  正在读取本地 Library…
+                </p>
+                <div className="paper-list" aria-hidden="true">
+                  {Array.from({ length: 4 }, (_, index) => (
+                    <div className="skeleton-row" key={index}>
+                      <span className="skeleton-icon" />
+                      <div className="skeleton-copy">
+                        <span className="skeleton-line long" />
+                        <span className="skeleton-line short" />
+                      </div>
+                      <span className="skeleton-controls" />
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : papers.length === 0 ? (
               <div className="empty">
                 <div className="empty-icon" aria-hidden="true">
@@ -803,7 +825,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               <div className="paper-list">
                 {papers.map((p) => (
                   <article className="paper-row" key={p.id}>
-                    <div className="paper-icon">
+                    <div className="paper-icon" aria-hidden="true">
                       <FileText size={22} />
                     </div>
                     <div className="paper-info">
@@ -816,14 +838,22 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                       >
                         {p.title}
                       </a>
-                      <p>
-                        {p.authors.length
-                          ? p.authors.slice(0, 3).join(", ")
-                          : "作者待补全"}
-                        {p.authors.length > 3 ? " 等" : ""}{" "}
-                        <span>{p.year || "年份待补全"}</span>
-                        <PublicationSources paper={p} />
+                      <p className="paper-byline">
+                        <span className="paper-authors">
+                          {p.authors.length
+                            ? p.authors.slice(0, 3).join(", ")
+                            : "作者待补全"}
+                          {p.authors.length > 3 ? " 等" : ""}
+                        </span>
+                        <span className="paper-year">
+                          {p.year || "年份待补全"}
+                        </span>
                       </p>
+                      {p.publication_sources.length > 0 && (
+                        <div className="paper-publications">
+                          <PublicationSources paper={p} />
+                        </div>
+                      )}
                       <div className="paper-meta">
                         {p.collections.map((c) => (
                           <Link
@@ -949,14 +979,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                           ),
                         )}
                       </select>
-                      <div>
+                      <div className="paper-action-links">
                         <Button
                           variant="ghost"
                           aria-label={`整理 ${p.title} 到文件夹`}
                           onClick={() => organizePaper(p)}
                         >
                           <Folder size={14} />
-                          归类
+                          整理
                         </Button>
                         <Button asChild variant="ghost">
                           <Link to={`/papers/${p.id}/pdf`}>PDF</Link>
@@ -990,6 +1020,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                       </div>
                     </div>
                     <Button
+                      className="paper-more"
                       variant="ghost"
                       aria-label={`编辑 ${p.title}`}
                       onClick={() => setEdit(p)}

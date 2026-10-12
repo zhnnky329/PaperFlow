@@ -83,6 +83,7 @@ def reader_document(paper, article, manifest, settings):
     theme = html.escape(settings.get("theme", "system"))
     return f'''<!doctype html><html lang="en" data-theme="{theme}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · PaperFlow</title>
+<link rel="icon" type="image/svg+xml" href="/reader-static/favicon.svg">
 <link rel="stylesheet" href="/reader-static/reader.css"><link rel="stylesheet" href="/reader-static/katex.min.css">
 <script defer src="/reader-static/katex.min.js"></script><script defer src="/reader-static/reader.js"></script>
 </head><body data-paper="{paper.id}" data-width="{width}" data-size="{size}">
