@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
@@ -12,6 +12,8 @@ import {
   ArrowUpRight,
   Library as LibraryIcon,
   X,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import {
   api,
@@ -27,6 +29,35 @@ import { Modal } from "./components/Modal";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
+
+function folderHierarchy(collections: Label[]) {
+  const result: {
+    folder: Label;
+    depth: number;
+    path: string;
+    ancestors: string[];
+  }[] = [];
+  const visited = new Set<string>();
+  function visit(folder: Label, ancestors: string[], parentPath: string) {
+    if (visited.has(folder.id)) return;
+    visited.add(folder.id);
+    const path =
+      folder.path ||
+      (parentPath ? `${parentPath}/${folder.name}` : folder.name);
+    result.push({ folder, depth: ancestors.length, path, ancestors });
+    collections
+      .filter((c) => c.parent_id === folder.id)
+      .forEach((child) => visit(child, [...ancestors, folder.id], path));
+  }
+  collections
+    .filter(
+      (c) =>
+        !c.parent_id ||
+        !collections.some((parent) => parent.id === c.parent_id),
+    )
+    .forEach((folder) => visit(folder, [], ""));
+  return result;
+}
 
 function PublicationSources({ paper }: { paper: Paper }) {
   return paper.publication_sources.map((source) => {
@@ -59,6 +90,10 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
   const collection = searchParams.get("folder") || "";
   function setCollection(value: string) {
     setSearchParams(value ? { folder: value } : {});
+    setStatus("");
+    setQuery("");
+    setTag("");
+    setPage(1);
   }
   const [papers, setPapers] = useState<Paper[]>([]),
     [total, setTotal] = useState(0),
@@ -79,6 +114,52 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
     [tab, setTab] = useState("pdf"),
     [arxiv, setArxiv] = useState("");
   const [importFolder, setImportFolder] = useState("");
+  const [parentFolder, setParentFolder] = useState("");
+  const [collapsedFolders, setCollapsedFolders] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(
+        localStorage.getItem("paperflow:collapsed-folders") || "[]",
+      );
+      return Array.isArray(saved)
+        ? saved.filter((id): id is string => typeof id === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const folderTree = useMemo(() => folderHierarchy(collections), [collections]);
+  const selectedFolder = folderTree.find(
+    ({ folder }) => folder.id === collection,
+  );
+  const childFolders = folderTree.filter(
+    ({ folder }) => (folder.parent_id || "") === collection,
+  );
+  function folderPath(folder: Label) {
+    return (
+      folder.path ||
+      folderTree.find((item) => item.folder.id === folder.id)?.path ||
+      folder.name
+    );
+  }
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "paperflow:collapsed-folders",
+        JSON.stringify(collapsedFolders),
+      );
+    } catch {
+      /* Preferences may be unavailable in private browsing. */
+    }
+  }, [collapsedFolders]);
+  const selectedAncestorIds = selectedFolder?.ancestors.join(",") || "";
+  useEffect(() => {
+    const ancestors = selectedAncestorIds ? selectedAncestorIds.split(",") : [];
+    setCollapsedFolders((current) =>
+      current.some((id) => ancestors.includes(id))
+        ? current.filter((id) => !ancestors.includes(id))
+        : current,
+    );
+  }, [collection, selectedAncestorIds]);
   const [organize, setOrganize] = useState<Paper | null>(null);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [deleteFolder, setDeleteFolder] = useState(false);
@@ -277,8 +358,8 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
     await api(`/papers/${paper.id}`, {
       method: "PATCH",
       body: JSON.stringify({
-        collections: [
-          ...new Set([...paper.collections.map((c) => c.name), folder.name]),
+        collection_ids: [
+          ...new Set([...paper.collections.map((c) => c.id), folder.id]),
         ],
       }),
     });
@@ -293,9 +374,14 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
         api(`/papers/${paper.id}/open-official`, { method: "POST" }),
       );
   }
-  function editTaxonomy(kind: "collections" | "tags", item?: Label) {
+  function editTaxonomy(
+    kind: "collections" | "tags",
+    item?: Label,
+    parentId = "",
+  ) {
     setTaxonomy({ kind, item });
     setName(item?.name || "");
+    setParentFolder(item?.parent_id || parentId);
     setDeleteFolder(false);
   }
   const heading = settingsPage
@@ -377,37 +463,74 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <Folder size={15} />
             <span className="nav-label">未分类</span>
           </Link>
-          {collections.map((c) => (
-            <div className="taxonomy-row" key={c.id}>
-              <Link
-                to={`/?folder=${c.id}`}
-                className={
-                  !settingsPage && collection === c.id
-                    ? "nav-item active"
-                    : "nav-item"
-                }
-                onClick={() => {
-                  setStatus("");
-                  setQuery("");
-                  setTag("");
-                  setPage(1);
-                }}
-              >
-                <Folder size={15} />
-                <span className="nav-label" title={c.name}>
-                  {c.name}
-                </span>
-                <span className="folder-count">{c.paper_count ?? 0}</span>
-              </Link>
-              <Button
-                variant="ghost"
-                aria-label={`管理文件夹 ${c.name}`}
-                onClick={() => editTaxonomy("collections", c)}
-              >
-                <MoreHorizontal size={14} />
-              </Button>
-            </div>
-          ))}
+          {folderTree
+            .filter(
+              ({ ancestors }) =>
+                !ancestors.some((id) => collapsedFolders.includes(id)),
+            )
+            .map(({ folder: c, depth, path }) => {
+              const hasChildren = collections.some(
+                (child) => child.parent_id === c.id,
+              );
+              const expanded = !collapsedFolders.includes(c.id);
+              return (
+                <div
+                  className="taxonomy-row"
+                  key={c.id}
+                  style={{ paddingLeft: Math.min(depth, 5) * 12 }}
+                >
+                  {hasChildren ? (
+                    <Button
+                      className="folder-toggle"
+                      variant="ghost"
+                      aria-label={`${expanded ? "折叠" : "展开"}文件夹 ${path}`}
+                      aria-expanded={expanded}
+                      onClick={() =>
+                        setCollapsedFolders((current) =>
+                          expanded
+                            ? [...current, c.id]
+                            : current.filter((id) => id !== c.id),
+                        )
+                      }
+                    >
+                      {expanded ? (
+                        <ChevronDown size={13} />
+                      ) : (
+                        <ChevronRight size={13} />
+                      )}
+                    </Button>
+                  ) : (
+                    <span className="folder-toggle-spacer" aria-hidden="true" />
+                  )}
+                  <Link
+                    to={`/?folder=${c.id}`}
+                    className={
+                      !settingsPage && collection === c.id
+                        ? "nav-item active"
+                        : "nav-item"
+                    }
+                    title={path}
+                    onClick={() => {
+                      setStatus("");
+                      setQuery("");
+                      setTag("");
+                      setPage(1);
+                    }}
+                  >
+                    <Folder size={15} />
+                    <span className="nav-label">{c.name}</span>
+                    <span className="folder-count">{c.paper_count ?? 0}</span>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    aria-label={`管理文件夹 ${path}`}
+                    onClick={() => editTaxonomy("collections", c)}
+                  >
+                    <MoreHorizontal size={14} />
+                  </Button>
+                </div>
+              );
+            })}
         </nav>
         <div className="sidebar-bottom">
           <Link
@@ -673,37 +796,114 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                 </Button>
               </div>
             )}
-            {!collection && !query && !status && !tag && (
-              <section className="folder-section" aria-label="我的文件夹">
+            {(selectedFolder || (!collection && !query && !status && !tag)) && (
+              <section
+                className="folder-section"
+                aria-label={collection ? "子文件夹" : "我的文件夹"}
+              >
+                {selectedFolder && (
+                  <nav className="folder-breadcrumbs" aria-label="文件夹路径">
+                    <Link
+                      to="/"
+                      onClick={() => {
+                        setStatus("");
+                        setQuery("");
+                        setTag("");
+                        setPage(1);
+                      }}
+                    >
+                      全部论文
+                    </Link>
+                    {[...selectedFolder.ancestors, collection].map((id) => {
+                      const item = folderTree.find(
+                        ({ folder }) => folder.id === id,
+                      );
+                      if (!item) return null;
+                      return (
+                        <span key={id}>
+                          <ChevronRight size={12} aria-hidden="true" />
+                          {id === collection ? (
+                            <span aria-current="page" title={item.path}>
+                              {item.folder.name}
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/?folder=${id}`}
+                              title={item.path}
+                              onClick={() => {
+                                setQuery("");
+                                setTag("");
+                                setPage(1);
+                              }}
+                            >
+                              {item.folder.name}
+                            </Link>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </nav>
+                )}
                 <div className="folder-section-heading">
-                  <h2>我的文件夹</h2>
-                  <Button
-                    variant="ghost"
-                    onClick={() => editTaxonomy("collections")}
-                  >
-                    <Plus size={14} />
-                    新建文件夹
-                  </Button>
-                </div>
-                {collections.length ? (
-                  <div className="folder-grid">
-                    {collections.map((c) => (
-                      <Link
-                        className="folder-card"
-                        key={c.id}
-                        to={`/?folder=${c.id}`}
+                  <h2>{collection ? "子文件夹" : "我的文件夹"}</h2>
+                  <div className="folder-section-actions">
+                    {selectedFolder && (
+                      <Button
+                        variant="ghost"
+                        aria-label={`管理当前文件夹 ${selectedFolder.path}`}
+                        onClick={() =>
+                          editTaxonomy("collections", selectedFolder.folder)
+                        }
                       >
-                        <Folder size={25} />
-                        <div className="folder-card-body">
-                          <strong title={c.name}>{c.name}</strong>
-                          <span>{c.paper_count ?? 0} 篇论文</span>
-                        </div>
-                      </Link>
-                    ))}
+                        <MoreHorizontal size={14} />
+                        管理
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        editTaxonomy("collections", undefined, collection)
+                      }
+                    >
+                      <Plus size={14} />
+                      {collection ? "新建子文件夹" : "新建文件夹"}
+                    </Button>
+                  </div>
+                </div>
+                {childFolders.length ? (
+                  <div className="folder-grid">
+                    {childFolders.map(({ folder: c, path }) => {
+                      const childCount = collections.filter(
+                        (child) => child.parent_id === c.id,
+                      ).length;
+                      return (
+                        <Link
+                          className="folder-card"
+                          key={c.id}
+                          to={`/?folder=${c.id}`}
+                          onClick={() => {
+                            setQuery("");
+                            setTag("");
+                            setPage(1);
+                          }}
+                        >
+                          <Folder size={25} />
+                          <div className="folder-card-body">
+                            <strong title={path}>{c.name}</strong>
+                            <span>
+                              {childCount ? `${childCount} 个子文件夹 · ` : ""}
+                              {c.paper_count ?? 0} 篇论文
+                            </span>
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="muted">
-                    创建自己的分类，例如 SLAM、路径规划或待读文献。
+                    {collection
+                      ? "在这里新建子文件夹，进一步整理论文。"
+                      : "创建自己的分类，例如 SLAM、路径规划或待读文献。"}
                   </p>
                 )}
               </section>
@@ -862,7 +1062,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                             to={`/?folder=${c.id}`}
                           >
                             <Folder size={11} />
-                            {c.name}
+                            {folderPath(c)}
                           </Link>
                         ))}
                         <span className="format">
@@ -1079,9 +1279,9 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               onChange={(e) => setImportFolder(e.target.value)}
             >
               <option value="">未分类（稍后整理）</option>
-              {collections.map((c) => (
+              {folderTree.map(({ folder: c, path }) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {path}
                 </option>
               ))}
             </select>
@@ -1392,7 +1592,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <div className="detail-folders">
               <span>
                 文件夹：
-                {edit.collections.map((c) => c.name).join("、") || "未分类"}
+                {edit.collections.map(folderPath).join("、") || "未分类"}
               </span>
               <Button
                 type="button"
@@ -1482,7 +1682,11 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     (taxonomy.item ? "/" + taxonomy.item.id : ""),
                   {
                     method: taxonomy.item ? "PATCH" : "POST",
-                    body: JSON.stringify({ name }),
+                    body: JSON.stringify(
+                      taxonomy.kind === "collections"
+                        ? { name, parent_id: parentFolder || null }
+                        : { name },
+                    ),
                   },
                 );
                 if (taxonomy.kind === "collections" && !taxonomy.item)
@@ -1501,14 +1705,51 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
               />
             </label>
             {taxonomy.kind === "collections" && (
-              <p className="muted">
-                同步到 Finder 中的同名目录。原始 PDF 保留在论文库中。
-              </p>
+              <>
+                <label className="field">
+                  上级文件夹
+                  <select
+                    aria-label="上级文件夹"
+                    value={parentFolder}
+                    onChange={(e) => setParentFolder(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="">无（根目录）</option>
+                    {folderTree
+                      .filter(
+                        ({ folder, ancestors }) =>
+                          folder.id !== taxonomy.item?.id &&
+                          !ancestors.includes(taxonomy.item?.id || ""),
+                      )
+                      .map(({ folder, path }) => (
+                        <option key={folder.id} value={folder.id}>
+                          {path}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <p className="muted">
+                  同步到 Finder 中对应的目录层级。原始 PDF 保留在论文库中。
+                </p>
+                {taxonomy.item && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      editTaxonomy("collections", undefined, taxonomy.item!.id)
+                    }
+                  >
+                    <Plus size={14} />
+                    新建子文件夹
+                  </Button>
+                )}
+              </>
             )}
             {deleteFolder && (
               <p className="error">
-                仅清理这个分类及未修改的 PDF 副本。论文原文、其他文件夹及 Finder
-                中额外文件保留。
+                {taxonomy.kind === "collections"
+                  ? "将删除此文件夹及其中的全部子文件夹分类，并清理未修改的 PDF 副本。论文原文、阅读进度、其他分类和 Finder 中额外文件保留。"
+                  : "删除此标签，论文原文与阅读进度保留。"}
               </p>
             )}
             <div className="form-actions">
@@ -1579,7 +1820,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             选择要存放的文件夹，可同时放入多个。取消全部勾选后归入未分类。
           </p>
           <div className="folder-picker">
-            {collections.map((c) => (
+            {folderTree.map(({ folder: c, path }) => (
               <label key={c.id}>
                 <input
                   type="checkbox"
@@ -1593,7 +1834,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   }
                 />
                 <Folder size={16} />
-                <span>{c.name}</span>
+                <span>{path}</span>
               </label>
             ))}
             {!collections.length && <p>先在侧栏创建一个文件夹，再整理论文。</p>}
@@ -1608,9 +1849,9 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   await api(`/papers/${organize.id}`, {
                     method: "PATCH",
                     body: JSON.stringify({
-                      collections: collections
+                      collection_ids: collections
                         .filter((c) => selectedFolders.includes(c.id))
-                        .map((c) => c.name),
+                        .map((c) => c.id),
                     }),
                   });
                   setOrganize(null);

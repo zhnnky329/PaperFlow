@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -27,6 +28,7 @@ class PaperPatch(BaseModel):
     read_status: Literal["unread", "reading", "finished"] | None = None
     tags: list[str] | None = Field(None, max_length=100)
     collections: list[str] | None = Field(None, max_length=100)
+    collection_ids: list[UUID] | None = Field(None, max_length=100)
     doi: str | None = Field(None, max_length=300)
     venue: str | None = Field(None, max_length=1000)
     venue_kind: Literal["journal", "conference"] | None = None
@@ -60,6 +62,15 @@ class ArxivInput(BaseModel):
 
 class NameInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class CollectionInput(NameInput):
+    parent_id: UUID | None = None
+
+
+class CollectionPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=80)
+    parent_id: UUID | None = None
 
 
 class ReadingPosition(BaseModel):

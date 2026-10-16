@@ -1,6 +1,19 @@
 import uuid
+import unicodedata
 from datetime import datetime, timezone
-from sqlalchemy import JSON, Column, Float, ForeignKey, Integer, String, Table, create_engine, event
+from sqlalchemy import (
+    JSON,
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    create_engine,
+    event,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from alembic.config import Config as AlembicConfig
 from alembic import command
@@ -70,7 +83,18 @@ class Tag(Base):
 class Collection(Base):
     __tablename__ = "collections"
     id = Column(String, primary_key=True, default=uid)
-    name = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    parent_id = Column(String, ForeignKey("collections.id", ondelete="CASCADE"))
+    name_key = Column(String, nullable=False)
+    __table_args__ = (
+        Index("uq_collections_parent_name", func.coalesce(parent_id, ""), name_key, unique=True),
+    )
+
+
+@event.listens_for(Collection, "before_insert")
+@event.listens_for(Collection, "before_update")
+def collection_name_key(mapper, connection, collection):
+    collection.name_key = unicodedata.normalize("NFC", collection.name).casefold()
 
 
 class Job(Base):

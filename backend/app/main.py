@@ -35,6 +35,8 @@ from .schemas import (
     PaperPatch,
     ArxivInput,
     NameInput,
+    CollectionInput,
+    CollectionPatch,
     ReadingPosition,
     SettingsPatch,
     ConvertInput,
@@ -45,6 +47,7 @@ from .worker import Worker, settings, job_dict
 from .html import reader_document
 from . import arxiv, metadata
 from .folders import FolderSync, FolderConflict, folder_name
+from .collection_tree import collection_descendants, collection_info, collection_path, CollectionTreeError
 
 
 def create_app(config=None):
@@ -243,8 +246,9 @@ def create_app(config=None):
 
     def taxonomy(session, paper, model, association):
         key = "tag_id" if model == Tag else "collection_id"
+        collections = {r.id: r for r in session.scalars(select(Collection))} if model == Collection else {}
         return [
-            {"id": row.id, "name": row.name}
+            collection_info(row, collections) if model == Collection else {"id": row.id, "name": row.name}
             for row in session.scalars(
                 select(model)
                 .join(association, model.id == association.c[key])
@@ -385,7 +389,21 @@ def create_app(config=None):
     def update_paper(paper_id: UUID, body: PaperPatch):
         with import_lock, sessions() as session:
             paper = paper_or_404(session, paper_id)
+            if body.collection_ids is not None and body.collections is not None:
+                raise HTTPException(422, "请使用文件夹 ID 或根目录名称分类，不要同时提供")
+            if body.collection_ids is not None:
+                identifiers = {str(item) for item in body.collection_ids}
+                rows = list(session.scalars(select(Collection).where(Collection.id.in_(identifiers))))
+                if len(rows) != len(identifiers):
+                    raise HTTPException(422, "所选文件夹不存在，请刷新后重试")
+                session.execute(delete(paper_collections).where(paper_collections.c.paper_id == paper.id))
+                for row in rows:
+                    session.execute(
+                        paper_collections.insert().values(paper_id=paper.id, collection_id=row.id)
+                    )
             for key, value in body.model_dump(exclude_unset=True).items():
+                if key == "collection_ids":
+                    continue
                 if key in ("tags", "collections"):
                     if value is None:
                         continue
@@ -408,6 +426,7 @@ def create_app(config=None):
                                 r
                                 for r in session.scalars(select(model))
                                 if r.name.casefold() == name.casefold()
+                                and (model != Collection or r.parent_id is None)
                             ),
                             None,
                         )
@@ -671,7 +690,101 @@ def create_app(config=None):
         app.add_api_route("/api/v1/" + kind + "/{item_id}", remove, methods=["DELETE"])
 
     register_taxonomy("tags", Tag)
-    register_taxonomy("collections", Collection)
+
+    def collection_rows(session):
+        return {row.id: row for row in session.scalars(select(Collection))}
+
+    @app.get("/api/v1/collections")
+    def list_collections():
+        with sessions() as session:
+            rows = collection_rows(session)
+            counts = {}
+            for collection_id in session.scalars(select(paper_collections.c.collection_id)):
+                counts[collection_id] = counts.get(collection_id, 0) + 1
+            result = [
+                collection_info(row, rows)
+                | {"paper_count": counts.get(row.id, 0), "finder_path": str(folder_sync.directory(row))}
+                for row in rows.values()
+            ]
+            return sorted(result, key=lambda row: (row["path"].casefold(), row["id"]))
+
+    @app.post("/api/v1/collections")
+    def create_collection(body: CollectionInput):
+        with import_lock, sessions() as session:
+            rows = collection_rows(session)
+            name = folder_name(body.name)
+            parent_id = str(body.parent_id) if body.parent_id is not None else None
+            if parent_id is not None and parent_id not in rows:
+                raise HTTPException(422, "上级文件夹不存在")
+            row = next(
+                (
+                    r
+                    for r in rows.values()
+                    if r.parent_id == parent_id and r.name.casefold() == name.casefold()
+                ),
+                None,
+            )
+            if row is None:
+                row = Collection(id=uid(), name=name, parent_id=parent_id)
+                rows[row.id] = row
+                collection_path(row, rows)
+                session.add(row)
+                session.commit()
+                folder_sync.request()
+            return collection_info(row, rows)
+
+    @app.patch("/api/v1/collections/{item_id}")
+    def update_collection(item_id: UUID, body: CollectionPatch):
+        with import_lock, sessions() as session:
+            rows = collection_rows(session)
+            row = rows.get(str(item_id))
+            if row is None:
+                raise HTTPException(404, "文件夹不存在")
+            if "name" in body.model_fields_set:
+                if body.name is None:
+                    raise HTTPException(422, "文件夹名称不能为空")
+                row.name = folder_name(body.name)
+            if "parent_id" in body.model_fields_set:
+                parent_id = str(body.parent_id) if body.parent_id is not None else None
+                if parent_id is not None and parent_id not in rows:
+                    raise HTTPException(422, "上级文件夹不存在")
+                if parent_id in collection_descendants(row.id, rows):
+                    raise HTTPException(422, "不能移动到自身或下级文件夹中")
+                row.parent_id = parent_id
+            if any(
+                other.id != row.id
+                and other.parent_id == row.parent_id
+                and other.name.casefold() == row.name.casefold()
+                for other in rows.values()
+            ):
+                raise HTTPException(409, "上级目录中已有同名文件夹")
+            for descendant_id in collection_descendants(row.id, rows):
+                collection_path(rows[descendant_id], rows)
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                raise HTTPException(409, "上级目录中已有同名文件夹") from exc
+            folder_sync.request()
+            return collection_info(row, rows)
+
+    @app.delete("/api/v1/collections/{item_id}")
+    def remove_collection(item_id: UUID):
+        with import_lock, sessions() as session:
+            rows = collection_rows(session)
+            if str(item_id) not in rows:
+                raise HTTPException(404, "文件夹不存在")
+            identifiers = collection_descendants(str(item_id), rows)
+            session.execute(
+                delete(paper_collections).where(paper_collections.c.collection_id.in_(identifiers))
+            )
+            session.execute(delete(Collection).where(Collection.id.in_(identifiers)))
+            session.commit()
+            folder_sync.request()
+            return {"deleted": True}
+
+    @app.exception_handler(CollectionTreeError)
+    async def invalid_collection_tree(request, exc):
+        return JSONResponse({"error": {"code": "INVALID_COLLECTION_TREE", "message": str(exc)}}, 422)
 
     @app.exception_handler(FolderConflict)
     async def invalid_folder(request, exc):

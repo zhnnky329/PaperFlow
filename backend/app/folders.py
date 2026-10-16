@@ -15,6 +15,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 
+from .collection_tree import MAX_COLLECTION_DEPTH, CollectionTreeError, collection_path
 from .db import Collection, Paper, Setting, paper_collections, uid
 from .storage import ingest
 
@@ -122,11 +123,14 @@ class FolderSync:
         return path
 
     def directory(self, collection):
-        try:
-            name = folder_name(collection.name)
-        except FolderConflict:
-            name = "Folder-" + collection.id
-        return self.config.data_dir / "folders" / name
+        with self.sessions() as session:
+            rows = {row.id: row for row in session.scalars(select(Collection))}
+            rows[collection.id] = collection
+            try:
+                relative = collection_path(collection, rows)
+            except CollectionTreeError as exc:
+                raise FolderConflict("文件夹层级无效，请修正分类后重试") from exc
+            return self.config.data_dir / "folders" / relative
 
     def state(self, value):
         with self.sessions() as session:
@@ -186,9 +190,27 @@ class FolderSync:
                         )
 
     def manifest(self, directory):
-        with Directory(str(self.config.data_dir.resolve())) as base, Directory("folders", base) as root:
-            with Directory(Path(directory).name, root) as handle:
+        candidate = Path(directory)
+        root = (self.config.data_dir / "folders").absolute()
+        if ".." in candidate.parts:
+            raise FolderConflict("文件夹路径超出 PaperFlow 管理目录")
+        try:
+            parts = candidate.absolute().relative_to(root).parts
+        except ValueError as exc:
+            raise FolderConflict("文件夹路径超出 PaperFlow 管理目录") from exc
+        if not parts or len(parts) > MAX_COLLECTION_DEPTH:
+            raise FolderConflict("文件夹层级无效")
+        try:
+            with ExitStack() as stack:
+                handle = stack.enter_context(Directory(str(self.config.data_dir.resolve())))
+                handle = stack.enter_context(Directory("folders", handle))
+                for name in parts:
+                    folder_name(name)
+                    handle = stack.enter_context(Directory(name, handle))
+                handle.check()
                 return self.read_manifest(handle)
+        except OSError as exc:
+            raise FolderConflict("文件夹路径不可用或包含符号链接，未打开目录") from exc
 
     def read_manifest(self, directory):
         try:
@@ -212,45 +234,63 @@ class FolderSync:
 
     def scan(self, root, stack):
         result, cache, observed = {}, {}, {}
-        entries = os.listdir(root.fd)
-        if len(entries) > 5000:
-            raise FolderConflict("Finder 根目录条目过多，请分批整理论文")
-        for name in entries:
-            if name.startswith("."):
-                continue
-            info = root.info(name)
-            if stat.S_ISLNK(info.st_mode):
-                raise FolderConflict("Finder 中发现符号链接，请移开链接后重试")
-            if not stat.S_ISDIR(info.st_mode):
-                continue
-            folder_name(name)
-            directory = stack.enter_context(Directory(name, root))
-            names = os.listdir(directory.fd)
-            if len(names) > 5000:
-                raise FolderConflict(f"{name} 中文件过多，请分批整理论文")
-            data = self.read_manifest(directory) if ".paperflow.json" in names else None
-            files = {}
-            for filename in names:
-                if filename.startswith(".") or not filename.lower().endswith(".pdf"):
+
+        def visit(parent, prefix="", depth=0):
+            parent.check()
+            entries = os.listdir(parent.fd)
+            if len(entries) > 5000 or len(result) > 25000:
+                raise FolderConflict("Finder 目录条目过多，请分批整理论文")
+            siblings = set()
+            for name in sorted(entries):
+                if name.startswith("."):
                     continue
-                info = directory.info(filename)
-                if not stat.S_ISREG(info.st_mode):
-                    raise FolderConflict(f"{name}/{filename} 不是普通 PDF 文件，请移开后重试")
-                if info.st_size > self.config.max_upload_mb * 1024 * 1024:
-                    raise FolderConflict(f"{name}/{filename} 超过 PDF 大小限制")
-                key, stamp = name + "/" + filename, signature(info)
-                old = self.observed.get(key)
-                since = old[1] if old and old[0] == stamp else time.monotonic()
-                observed[key] = (stamp, since)
-                cached = self.cache.get(key)
-                if cached and cached[0] == stamp:
-                    checksum = cached[1]
-                else:
-                    contents = directory.read(filename, self.config.max_upload_mb * 1024 * 1024)
-                    checksum = hashlib.sha256(contents).hexdigest()
-                cache[key] = (stamp, checksum)
-                files[filename] = {"sha256": checksum, "stable": time.monotonic() - since >= 0.5}
-            result[name] = {"handle": directory, "manifest": data, "files": files}
+                info = parent.info(name)
+                if stat.S_ISLNK(info.st_mode):
+                    raise FolderConflict("Finder 中发现符号链接，请移开链接后重试")
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+                normalized = folder_name(name).casefold()
+                if normalized in siblings:
+                    raise FolderConflict("Finder 中有大小写或字符规范化后同名的文件夹，请重新命名")
+                siblings.add(normalized)
+                if depth >= MAX_COLLECTION_DEPTH:
+                    raise FolderConflict(f"文件夹最多支持 {MAX_COLLECTION_DEPTH} 层")
+                relative = prefix + "/" + name if prefix else name
+                directory = stack.enter_context(Directory(name, parent))
+                names = os.listdir(directory.fd)
+                if len(names) > 5000:
+                    raise FolderConflict(f"{relative} 中文件过多，请分批整理论文")
+                data = self.read_manifest(directory) if ".paperflow.json" in names else None
+                files = {}
+                for filename in names:
+                    if filename.startswith("."):
+                        continue
+                    info = directory.info(filename)
+                    if stat.S_ISLNK(info.st_mode):
+                        raise FolderConflict("Finder 中发现符号链接，请移开链接后重试")
+                    if stat.S_ISDIR(info.st_mode) or not filename.lower().endswith(".pdf"):
+                        continue
+                    if not stat.S_ISREG(info.st_mode):
+                        raise FolderConflict(f"{relative}/{filename} 不是普通 PDF 文件，请移开后重试")
+                    if info.st_size > self.config.max_upload_mb * 1024 * 1024:
+                        raise FolderConflict(f"{relative}/{filename} 超过 PDF 大小限制")
+                    key, stamp = relative + "/" + filename, signature(info)
+                    old = self.observed.get(key)
+                    since = old[1] if old and old[0] == stamp else time.monotonic()
+                    observed[key] = (stamp, since)
+                    cached = self.cache.get(key)
+                    if cached and cached[0] == stamp:
+                        checksum = cached[1]
+                    else:
+                        contents = directory.read(filename, self.config.max_upload_mb * 1024 * 1024)
+                        checksum = hashlib.sha256(contents).hexdigest()
+                    cache[key] = (stamp, checksum)
+                    files[filename] = {"sha256": checksum, "stable": time.monotonic() - since >= 0.5}
+                result[relative] = {"handle": directory, "manifest": data, "files": files}
+                visit(directory, relative, depth + 1)
+            parent.check()
+
+        visit(root)
         self.cache, self.observed = cache, observed
         return result
 
@@ -333,33 +373,55 @@ class FolderSync:
             members = {c: set() for c in collections}
             for paper_id, collection_id in session.execute(select(paper_collections)):
                 members[collection_id].add(paper_id)
+            try:
+                app_paths = {c.id: collection_path(c, collections) for c in collections.values()}
+            except CollectionTreeError as exc:
+                raise FolderConflict("文件夹层级无效，请修正分类后重试") from exc
+
+            def beneath(name, ancestor):
+                return name == ancestor or name.startswith(ancestor + "/")
+
             owned = {}
             for name, item in scanned.items():
                 data = item["manifest"]
-                if data:
-                    if data["id"] in owned:
-                        first = owned[data["id"]]
-                        original = previous.get(data["id"], {}).get("name")
-                        if not original and data["id"] in collections:
-                            original = self.directory(collections[data["id"]]).name
-                        if folder_name(first) == original:
-                            item["manifest"] = None  # Finder duplicated a whole folder.
-                            continue
-                        if folder_name(name) == original:
-                            scanned[first]["manifest"] = None
-                        else:
-                            raise FolderConflict(
-                                "出现重复的文件夹管理记录，无法确定原目录，请移开重复目录后重试"
-                            )
-                    owned[data["id"]] = name
-            # A folder copied from another PaperFlow library carries a foreign
-            # manifest. It is an import, never evidence that we may delete it.
+                if not data:
+                    continue
+                identifier = data["id"]
+                if identifier in owned:
+                    first = owned[identifier]
+                    original = previous.get(identifier, {}).get("name") or app_paths.get(identifier)
+                    if first == original:
+                        item["manifest"] = None  # A whole Finder subtree was copied.
+                        continue
+                    if name == original:
+                        scanned[first]["manifest"] = None
+                    else:
+                        raise FolderConflict("出现重复的文件夹管理记录，无法确定原目录，请移开重复目录后重试")
+                owned[identifier] = name
             for identifier, name in list(owned.items()):
                 if identifier not in collections and identifier not in previous:
                     scanned[name]["manifest"] = None
                     owned.pop(identifier)
-            suppressed = set(baseline.get("suppressed", [])) & set(scanned)
-            ignored = dict(baseline.get("ignored", {}))
+            # Finder may have moved an entire parent while preserved copies
+            # still use its previous path in the baseline. Translate by the
+            # deepest known folder ID before deciding what to import.
+            relocations = sorted(
+                (
+                    (old["name"], owned[identifier])
+                    for identifier, old in previous.items()
+                    if identifier in owned
+                ),
+                key=lambda item: -len(item[0]),
+            )
+
+            def current_path(path):
+                for old_path, actual in relocations:
+                    if beneath(path, old_path):
+                        return actual + path[len(old_path) :]
+                return path
+
+            suppressed = {current_path(path) for path in baseline.get("suppressed", [])} & set(scanned)
+            ignored = {current_path(key): value for key, value in baseline.get("ignored", {}).items()}
             deleted_hashes = {
                 old["files"][filename]
                 for old in previous.values()
@@ -370,62 +432,111 @@ class FolderSync:
                 for filename, info in item["files"].items():
                     if info["sha256"] in deleted_hashes:
                         ignored[name + "/" + filename] = info["sha256"]
-            mapping, removed = {}, set()
-            for collection_id, collection in collections.items():
-                old = previous.get(collection_id)
-                actual = owned.get(collection_id)
-                if old and actual is None:
-                    if old["name"] in scanned:
-                        raise FolderConflict("文件夹管理记录已移走，请恢复 .paperflow.json 后重试")
-                    if collection.name != old["name"] or members[collection_id] != set(old["members"]):
-                        raise FolderConflict("应用与 Finder 同时修改了文件夹，请恢复 Finder 目录后重试")
-                    removed.add(collection_id)
-                    continue
-                if actual:
-                    mapping[collection_id] = actual
-                    actual_name = folder_name(actual)
-                    if old and actual_name != old["name"]:
-                        if collection.name not in (old["name"], actual_name):
-                            raise FolderConflict("应用与 Finder 同时改名，请统一文件夹名称后重试")
-                        if any(
-                            c.id != collection_id and c.name.casefold() == actual_name.casefold()
-                            for c in collections.values()
-                        ):
-                            raise FolderConflict("Finder 改名与已有分类同名，请重新命名后重试")
-                        collection.name = actual_name
-            for collection_id in removed:
-                session.delete(collections[collection_id])
-                collections.pop(collection_id)
-                members.pop(collection_id)
-            orphan_names = {name for identifier, name in owned.items() if identifier not in collections}
-            orphan_names |= {
-                old["name"]
+
+            # A deleted app parent owns its former subtree, including newly
+            # added personal files. Never re-import that residue as new folders.
+            orphan_roots = {name for identifier, name in owned.items() if identifier not in collections} | {
+                current_path(old["name"])
                 for identifier, old in previous.items()
-                if identifier not in collections and old["name"] in scanned
+                if identifier not in collections and current_path(old["name"]) in scanned
             }
-            for name, item in scanned.items():
-                if name in orphan_names or name in mapping.values():
+            mapping = {identifier: name for identifier, name in owned.items() if identifier in collections}
+            protected = {p for p in mapping.values() if any(beneath(p, old) for old in orphan_roots)}
+            orphan_names = {
+                name
+                for name in scanned
+                if any(beneath(name, p) for p in orphan_roots)
+                and not any(beneath(name, p) for p in protected)
+            }
+            removed = set()
+            for identifier, collection in collections.items():
+                old = previous.get(identifier)
+                if not old or identifier in mapping:
+                    continue
+                if old["name"] in scanned:
+                    raise FolderConflict("文件夹管理记录已移走，请恢复 .paperflow.json 后重试")
+                if app_paths[identifier] != old["name"] or members[identifier] != set(old["members"]):
+                    raise FolderConflict("应用与 Finder 同时修改了文件夹，请恢复 Finder 目录后重试")
+                removed.add(identifier)
+
+            paths_to_ids = {name: identifier for identifier, name in mapping.items()}
+            for name in sorted(scanned, key=lambda p: (p.count("/"), p)):
+                if name in orphan_names or name in paths_to_ids:
                     continue
                 matching = next(
                     (
                         c
                         for c in collections.values()
-                        if self.directory(c).name.casefold() == folder_name(name).casefold()
+                        if c.id not in removed and app_paths.get(c.id, "").casefold() == name.casefold()
                     ),
                     None,
                 )
-                if name in suppressed and not matching:
+                if any(beneath(name, p) for p in suppressed) and not matching:
                     continue
                 if matching:
                     if matching.id in mapping:
                         raise FolderConflict("Finder 中有大小写或字符规范化后同名的文件夹，请重新命名")
-                    mapping[matching.id] = name
+                    identifier = matching.id
                 else:
-                    collection = Collection(id=uid(), name=folder_name(name))
+                    parent_path, _, leaf = name.rpartition("/")
+                    parent_id = paths_to_ids.get(parent_path)
+                    if parent_path and not parent_id:
+                        continue
+                    collection = Collection(id=uid(), name=folder_name(leaf), parent_id=parent_id)
                     session.add(collection)
+                    session.flush()
                     collections[collection.id], members[collection.id] = collection, set()
-                    mapping[collection.id] = name
+                    app_paths[collection.id] = name
+                    identifier = collection.id
+                mapping[identifier], paths_to_ids[name] = name, identifier
                 suppressed.discard(name)
+
+            old_ids_by_path = {old["name"]: identifier for identifier, old in previous.items()}
+            owned_ids_by_path = {name: identifier for identifier, name in owned.items()}
+            for identifier, name in mapping.items():
+                old = previous.get(identifier)
+                if not old:
+                    continue
+                collection = collections[identifier]
+                parent_path, _, leaf = name.rpartition("/")
+                parent_id = paths_to_ids.get(parent_path) or owned_ids_by_path.get(parent_path)
+                if parent_path and not parent_id:
+                    # The app may move a child out and delete its old parent
+                    # before the worker runs. Its untouched Finder copy is
+                    # still under that parent and must follow the app move.
+                    parent_id = old_ids_by_path.get(parent_path) if name == old["name"] else None
+                    if not parent_id:
+                        raise FolderConflict("Finder 父目录尚未同步，请恢复目录后重试")
+                old_parent = old.get("parent_id", old_ids_by_path.get(old["name"].rpartition("/")[0]))
+                old_leaf = old["name"].rsplit("/", 1)[-1]
+                actual_name = folder_name(leaf)
+                finder_changed = (parent_id, actual_name) != (old_parent, old_leaf)
+                app_changed = (collection.parent_id, collection.name) != (old_parent, old_leaf)
+                if finder_changed:
+                    if app_changed and (collection.parent_id, collection.name) != (parent_id, actual_name):
+                        raise FolderConflict("应用与 Finder 同时改名或移动，请统一文件夹位置和名称后重试")
+                    collection.parent_id, collection.name = parent_id, actual_name
+
+            removed_rows = [collections.pop(identifier) for identifier in removed]
+            for identifier in removed:
+                members.pop(identifier)
+            targets, siblings = {}, set()
+            try:
+                for collection in collections.values():
+                    path = collection_path(collection, collections)
+                    if len(path.split("/")) > MAX_COLLECTION_DEPTH:
+                        raise FolderConflict(f"文件夹最多支持 {MAX_COLLECTION_DEPTH} 层")
+                    key = collection.parent_id, folder_name(collection.name).casefold()
+                    if key in siblings:
+                        raise FolderConflict("Finder 改名与已有分类同名，请重新命名后重试")
+                    siblings.add(key)
+                    targets[collection.id] = path
+            except CollectionTreeError as exc:
+                raise FolderConflict("Finder 文件夹层级无效，请恢复目录后重试") from exc
+            # Preserve surviving children before cascading a deleted parent.
+            session.flush()
+            for collection in removed_rows:
+                session.delete(collection)
             # Upgrade old manifests conservatively: do not treat their missing
             # copies as Finder deletions until a complete baseline is established.
             for collection_id, name in mapping.items():
@@ -498,24 +609,55 @@ class FolderSync:
                         )
                         members[collection_id].remove(paper_id)
             session.commit()
-            result = {}
-            for collection_id, collection in collections.items():
-                target, actual = self.directory(collection).name, mapping.get(collection_id)
-                if actual:
-                    item, directory = scanned[actual], scanned[actual]["handle"]
-                    if actual != target:
+            result, directories = {}, {}
+            items = {identifier: scanned[name] for identifier, name in mapping.items()}
+            actual_paths = dict(mapping)
+
+            def relocate_keys(old_path, new_path):
+                for key in list(ignored):
+                    if key.startswith(old_path + "/"):
+                        ignored[new_path + key[len(old_path) :]] = ignored.pop(key)
+                for identifier, actual in list(actual_paths.items()):
+                    if beneath(actual, old_path):
+                        actual_paths[identifier] = new_path + actual[len(old_path) :]
+                for path in list(suppressed):
+                    if beneath(path, old_path):
+                        suppressed.remove(path)
+                        suppressed.add(new_path + path[len(old_path) :])
+
+            for collection_id in sorted(collections, key=lambda i: (targets[i].count("/"), targets[i])):
+                collection = collections[collection_id]
+                target = targets[collection_id]
+                leaf = target.rsplit("/", 1)[-1]
+                parent = directories[collection.parent_id] if collection.parent_id else root
+                parent.check()
+                if collection_id in items:
+                    item = items[collection_id]
+                    directory = item["handle"]
+                    if directory.parent is not parent or directory.name != leaf:
                         directory.check()
-                        if target in scanned and scanned[target] is not item:
+                        try:
+                            existing = parent.info(leaf)
+                        except FileNotFoundError:
+                            existing = None
+                        if existing is not None and signature(existing)[:2] != directory.identity:
                             raise FolderConflict("同名 Finder 目录已经存在，请重新命名分类后重试")
-                        os.rename(actual, target, src_dir_fd=root.fd, dst_dir_fd=root.fd)
-                        directory.name = target
-                        for key in list(ignored):
-                            if key.startswith(actual + "/"):
-                                ignored[target + key[len(actual) :]] = ignored.pop(key)
+                        old_path = actual_paths[collection_id]
+                        os.rename(directory.name, leaf, src_dir_fd=directory.parent.fd, dst_dir_fd=parent.fd)
+                        directory.name, directory.parent = leaf, parent
+                        directory.check()
+                        relocate_keys(old_path, target)
                 else:
-                    os.mkdir(target, dir_fd=root.fd)
-                    directory = stack.enter_context(Directory(target, root))
+                    try:
+                        os.mkdir(leaf, dir_fd=parent.fd)
+                    except FileExistsError as exc:
+                        raise FolderConflict("同名 Finder 目录已经存在，请重新命名分类后重试") from exc
+                    directory = stack.enter_context(Directory(leaf, parent))
+                    directory.check()
                     item = {"files": {}, "manifest": None, "handle": directory}
+                    items[collection_id] = item
+                    actual_paths[collection_id] = target
+                directories[collection_id] = directory
                 data = item["manifest"] or {"files": {}}
                 wanted, file_ids = {}, {}
                 for filename, info in item["files"].items():
@@ -555,6 +697,7 @@ class FolderSync:
                 record = {
                     "id": collection_id,
                     "name": target,
+                    "parent_id": collection.parent_id,
                     "files": wanted,
                     "papers": file_ids,
                     "members": sorted(members[collection_id]),
@@ -562,7 +705,9 @@ class FolderSync:
                 if item["manifest"] != record:
                     directory.write_manifest(record)
                 result[collection_id] = record
-            for name in orphan_names:
+            # Children must be cleaned before their parents. Non-owned content
+            # remains on disk, and suppression covers its entire subtree.
+            for name in sorted(orphan_names, key=lambda p: (-p.count("/"), p)):
                 item = scanned[name]
                 directory, data = item["handle"], item["manifest"]
                 if data:
@@ -573,14 +718,16 @@ class FolderSync:
                     os.unlink(".paperflow.json", dir_fd=directory.fd)
                 if not os.listdir(directory.fd):
                     directory.check()
-                    os.rmdir(name, dir_fd=root.fd)
+                    os.rmdir(directory.name, dir_fd=directory.parent.fd)
                 else:
-                    suppressed.add(name)
-            # Ignore only preserved copies that still exist unchanged. A later
-            # deliberate re-add after removal can then be imported normally.
-            handles = {item["handle"].name: item for item in scanned.values()}
+                    parts, current = [], directory
+                    while current is not root:
+                        parts.append(current.name)
+                        current = current.parent
+                    suppressed.add("/".join(reversed(parts)))
+            handles = {actual_paths[identifier]: item for identifier, item in items.items()}
             for key, checksum in list(ignored.items()):
-                name, filename = key.split("/", 1)
+                name, filename = key.rsplit("/", 1)
                 item = handles.get(name)
                 if not item or item["files"].get(filename, {}).get("sha256") != checksum:
                     ignored.pop(key)

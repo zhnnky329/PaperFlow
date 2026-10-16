@@ -3,6 +3,9 @@ export type Label = {
   name: string;
   paper_count?: number;
   finder_path?: string;
+  parent_id?: string | null;
+  path?: string;
+  depth?: number;
 };
 export type Job = {
   id: string;
