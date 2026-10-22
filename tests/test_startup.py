@@ -16,6 +16,7 @@ def launcher(monkeypatch, tmp_path, port):
     monkeypatch.setenv("PAPERFLOW_DATA_DIR", str(tmp_path / "library"))
     monkeypatch.setenv("PAPERFLOW_PORT", str(port))
     monkeypatch.setenv("PAPERFLOW_MARKER_EXECUTABLE", "/missing/marker")
+    monkeypatch.setenv("PAPERFLOW_DISCOVERY_ONLINE", "false")
     monkeypatch.setattr(module, "load_dotenv", lambda *_: None)
     return module
 

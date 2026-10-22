@@ -131,6 +131,54 @@ class Setting(Base):
     value = Column(JSON, nullable=False)
 
 
+class DiscoveryPaper(Base):
+    __tablename__ = "discovery_papers"
+    id = Column(String, primary_key=True, default=uid)
+    arxiv_id = Column(String, unique=True, nullable=False)
+    arxiv_aliases = Column(JSON, nullable=False, default=list)
+    arxiv_version = Column(Integer, nullable=False, default=0)
+    doi = Column(String, index=True)
+    title = Column(String, nullable=False)
+    authors = Column(JSON, nullable=False, default=list)
+    abstract = Column(String, nullable=False, default="")
+    categories = Column(JSON, nullable=False, default=list)
+    published_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=False)
+    source_url = Column(String, nullable=False)
+    venue = Column(String)
+    content_hash = Column(String, nullable=False)
+    analysis_status = Column(String, nullable=False, default="pending")
+    analysis = Column(JSON)
+    analyzed_hash = Column(String)
+    analyzed_at = Column(String)
+    analysis_error = Column(String)
+    feedback = Column(String, nullable=False, default="none")
+    paper_id = Column(String, ForeignKey("papers.id", ondelete="SET NULL"))
+    first_seen_at = Column(String, nullable=False, default=now)
+    last_seen_at = Column(String, nullable=False, default=now)
+    recommendation_run_id = Column(String)
+
+
+class DiscoveryRun(Base):
+    __tablename__ = "discovery_runs"
+    id = Column(String, primary_key=True, default=uid)
+    status = Column(String, nullable=False, default="queued")
+    trigger = Column(String, nullable=False)
+    stage = Column(String, nullable=False, default="waiting")
+    options = Column(JSON, nullable=False, default=dict)
+    fetched_count = Column(Integer, nullable=False, default=0)
+    new_count = Column(Integer, nullable=False, default=0)
+    analyzed_count = Column(Integer, nullable=False, default=0)
+    recommended_count = Column(Integer, nullable=False, default=0)
+    tokens_used = Column(Integer, nullable=False, default=0)
+    tokens_reserved = Column(Integer, nullable=False, default=0)
+    error_code = Column(String)
+    error_message = Column(String)
+    created_at = Column(String, nullable=False, default=now)
+    started_at = Column(String)
+    finished_at = Column(String)
+
+
 def database(config):
     config.data_dir.mkdir(parents=True, exist_ok=True)
     engine = create_engine(

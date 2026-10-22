@@ -6,12 +6,14 @@ const PdfReader = lazy(() =>
   import("./PdfReader").then((module) => ({ default: module.PdfReader })),
 );
 import "./styles.css";
+import "./discovery.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/settings" element={<App settingsPage />} />
+        <Route path="/discover" element={<App discoverPage />} />
         <Route
           path="/papers/:id/pdf"
           element={

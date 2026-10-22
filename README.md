@@ -1,70 +1,181 @@
-# PaperFlow
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/paperflow-logo-dark.png">
+    <img src="docs/images/paperflow-logo.png" alt="PaperFlow" width="560">
+  </picture>
+</p>
 
-PaperFlow是一个本地论文管理与阅读工具，将 PDF 和 arXiv 链接放进同一个论文库，按自己的文件夹分类，在原始 PDF 和 HTML 之间切换，下一次打开时继续阅读。
+<p align="center"><strong>从发现到阅读，你的本地论文工作台。</strong></p>
+<p align="center">AI 论文推荐 · 本地文献管理 · PDF / HTML 阅读</p>
 
-应用在本机运行，通过浏览器访问。论文、分类和阅读进度保存在自己的电脑上，不需要账户或云数据库。主要面向 macOS Apple Silicon。
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-5964C0?style=flat-square" alt="MIT License"></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.11+"></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/macOS-Apple_Silicon-555555?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS Apple Silicon"></a>
+</p>
 
-[快速开始](#快速开始) · [使用说明](#使用说明) · [配置 Marker](#配置-marker) · [备份与恢复](#备份与恢复) · [MIT License](LICENSE)
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#ai-discovery">AI 推荐</a> ·
+  <a href="#日常使用">使用指南</a> ·
+  <a href="#界面预览">界面预览</a> ·
+  <a href="https://github.com/zhnnky329/PaperFlow/issues">反馈问题</a>
+</p>
 
-![PaperFlow 论文库](docs/images/library.png)
+PaperFlow 是一个集成 AI 论文推荐的本地论文管理与阅读工具。通过浏览器使用，论文库和阅读记录保存在自己的电脑上，无需注册账号，主要面向 macOS Apple Silicon。
 
-*论文库与文件夹分类。*
+## 核心功能
 
-## 功能
+| 功能 | 可以做什么 |
+| --- | --- |
+| **🆕 AI 论文推荐** | 自定义研究方向、关键词和优先级，定期从 arXiv 发现论文，生成中文总结与推荐理由，感兴趣的一键加入文献库。 |
+| **📥 PDF 与 arXiv 统一管理** | 拖入本地 PDF，或导入 arXiv 链接 / ID，自动补全论文信息，重复 PDF 按内容去重。 |
+| **📂 文件夹与 Finder 同步** | 自定义多层分类，一篇论文可放入多个文件夹；分类对应 Finder 中的真实目录，支持双向整理。 |
+| **📖 PDF 与 HTML 阅读** | 保留 PDF 原始排版，打开 arXiv 官方 HTML，或通过 Marker 将本地 PDF 转成 HTML，配合 Read Frog 等浏览器翻译插件阅读。 |
+| **🔖 阅读进度保存** | 记住 PDF 页码、缩放和本地 HTML 阅读位置，下次打开接着读。 |
+| **🔎 搜索与阅读状态** | 按标题、作者、arXiv ID 和标签搜索，标记未读 / 阅读中 / 已读，支持浅色与深色主题。 |
+| **💻 本地存储与备份** | 论文、分类和阅读记录保存在本机，支持备份恢复；已有 PDF 和本地 HTML 可离线阅读。 |
 
-- **PDF 与 arXiv 导入**：支持拖拽、文件选择、链接和 ID；重复 PDF 按内容去重，后台补全论文信息，支持手动编辑。
-- **文件夹和标签**：支持多层子文件夹，自定义分类名称，一篇论文可以放入多个文件夹；分类对应 Finder 中的真实目录。
-- **PDF 阅读**：保留原始排版，支持页码跳转、缩放、适配宽度和文本选择，自动保存阅读位置。
-- **HTML 阅读**：优先提供可用的 arXiv 官方 HTML；本地 PDF 可以通过 Marker 转换，支持目录、公式、图片和表格。
-- **搜索与阅读状态**：搜索标题、作者、arXiv ID 和标签，按时间、年份或标题排序，标记未读、阅读中和已读。
-- **本地存储**：数据重启后保留，支持备份恢复；已有 PDF 和本地 HTML 可以离线阅读。
+## 界面预览
 
+| Discover · AI 论文推荐 | Library · 论文库与文件夹 |
+| --- | --- |
+| [![Discover 真实运行截图：中文总结、推荐理由和相关性评分](docs/images/discover.jpg)](docs/images/discover.jpg) | [![论文库真实运行截图：文件夹、论文列表与阅读入口](docs/images/library-current.jpg)](docs/images/library-current.jpg) |
 
+*真实运行截图，点击可查看大图。*
 
 ## 快速开始
 
+需要 **Python 3.11+（推荐 3.12）**、**Node.js 24 LTS**、Git 和 make。Node.js 用于安装和构建前端，构建后日常运行不需要它。
 
-
-### 环境要求
-
-- Python **3.11 或更高版本**，推荐 3.12。
-- Node.js **24 LTS**，包含 npm，用于安装和构建前端。
-- Git、make，以及一个现代浏览器。
-
-如果使用 conda，可以先准备 Python 环境：
+<details>
+<summary>使用 conda 准备 Python 环境（可选）</summary>
 
 ```sh
 conda create -n paperflow python=3.12 -y
 conda activate paperflow
 ```
 
-下面的 `python3` 应指向这个环境或其他已安装的 Python 3.11+，而不是 macOS 自带的旧版本。
+下面的 `python3` 应指向 Python 3.11+ 环境。
 
-### 安装并启动
+</details>
 
 ```sh
 git clone https://github.com/zhnnky329/PaperFlow.git
 cd PaperFlow
-
 make install PYTHON=python3
 cp .env.example .env
 make build
 make serve
 ```
 
-服务就绪后会自动打开默认浏览器，也可以访问 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**。终端保持运行，按 `Ctrl-C` 停止服务。关闭浏览器标签页不会停止应用。
+服务就绪后会自动打开浏览器，也可以访问 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**。以后只需在项目目录运行 `make serve`，保持终端开启，按 `Ctrl-C` 停止服务；关闭浏览器标签页不会停止应用。
 
-这一步不需要安装 Marker，可以先导入论文、建立分类和阅读 PDF。需要本地 HTML 时，再按下文配置转换器。
+基础导入、管理和 PDF 阅读无需安装 Marker 或配置 AI。
 
-### 日常启动与更新
+## 日常使用
 
-以后在项目目录运行：
+<a id="ai-discovery"></a>
+
+### 1. 让 AI 帮你找论文
+
+1. 在 **Settings → Research Discovery** 填写研究方向、描述、关键词和优先级。
+2. 配置自己的 **DeepSeek API Key**，设置每轮分析数量和预算，开启 **AI 分析**并保存。
+3. 进入 **Discover**，点击 **检查新论文**。抓取完成后开始分析，可查看中文总结、推荐理由、匹配方向及分析依据。
+
+推荐支持标记「感兴趣 / 稍后阅读 / 不感兴趣」，也可点击 **加入文献库**，继续归类和阅读。
+
+默认在应用运行时每 **48 小时**检查 arXiv 的 **cs.CV、cs.RO、cs.AI**，首次查看最近七天。AI 默认关闭；开启后会把候选论文的摘要或正文发送给 DeepSeek，按 API 用量计费。结果会注明「全文 / 部分正文 / 仅摘要」，相关性评分仅供筛选参考。更多细节见 [Research Discovery](docs/RESEARCH_DISCOVERY.md)。
+
+### 2. 导入与整理论文
+
+点击 **Add Paper**，拖入 PDF 或粘贴 arXiv 链接 / ID。原始 PDF 会复制到论文库，元信息会在后台补全，也可以通过 **…** 手动编辑。
+
+侧栏 **+** 创建文件夹，进入后可新建子文件夹。通过论文的 **整理** 按钮选择一个或多个分类，点击 **在 Finder 中打开**可查看对应目录。
+
+<details>
+<summary>Finder 同步与文件副本说明</summary>
+
+- 分类目录默认位于 `~/Library/Application Support/PaperFlow/folders/`，里面保存 PDF 的独立副本；同一篇论文放入多个分类会生成多份副本。
+- 在 Finder 中新建、重命名、移动分类，或放入、移动 PDF，应用运行时会同步到论文库；停机期间的改动会在下次启动后同步。
+- 删除 Finder 中的 PDF 副本只取消对应分类，删除分类也不会删除 Library 中的论文和阅读记录。
+- 请保留目录中的隐藏文件 `.paperflow.json`。修改 PDF 内容可能触发冲突，可另存为新文件名导入；原文不会被覆盖。
+
+</details>
+
+arXiv 导入初始只保存条目和链接。需要离线阅读时，打开 **PDF → Download PDF**；下载后才会在分类目录中生成 PDF 副本。
+
+### 3. 选择阅读方式
+
+| 入口 | 用途 | 进度保存 |
+| --- | --- | --- |
+| **PDF** | 查看原始排版、公式和图表 | 页码、缩放和滚动位置 |
+| **Official HTML ↗** | 打开已确认可用的 arXiv 官方 HTML | 外部页面，不记录阅读位置 |
+| **HTML / Local HTML** | 阅读 Marker 转换的正文，使用目录、调整字号和宽度 | 章节和滚动位置 |
+
+本地 HTML 通过论文的 **Convert** 按钮生成，转换期间可以继续阅读 PDF。HTML 页面可配合 Read Frog 等浏览器翻译插件使用，插件需要自行安装和配置。
+
+## 可选配置
+
+<details>
+<summary><strong>Marker：将本地 PDF 转成 HTML</strong></summary>
+
+Marker 安装在独立环境中。先在项目目录执行：
 
 ```sh
-make serve
+python3 -m venv .marker-venv
+.marker-venv/bin/python -m pip install -r backend/marker-requirements.lock
 ```
 
-构建完成后，日常运行不需要 Node.js，也不会在启动时加载模型。更新源码后，先停止服务、备份论文库，再重新安装依赖并构建；保留已有 `.env`：
+Apple Silicon 还需要 llama.cpp 的 `llama-server`。使用 Homebrew 安装：
+
+```sh
+brew install llama.cpp
+command -v llama-server
+```
+
+也可使用 [llama.cpp 官方二进制](https://github.com/ggml-org/llama.cpp/releases)，选择 arm64 版本。在 `.env` 中填写实际路径：
+
+```dotenv
+PAPERFLOW_MARKER_EXECUTABLE="/absolute/path/PaperFlow/.marker-venv/bin/marker_single"
+LLAMA_CPP_BINARY="/opt/homebrew/bin/llama-server"
+```
+
+重启后，在 **Settings → Conversion** 检查是否识别到 Marker；`make doctor` 可检查依赖和路径。默认使用 Fast 模式，自动转换默认关闭。首次转换会下载模型，之后复用缓存。任务支持取消、失败重试和重建 HTML，原始 PDF 始终保留。
+
+</details>
+
+<details>
+<summary><strong>数据位置与网络设置</strong></summary>
+
+默认数据目录是 `~/Library/Application Support/PaperFlow/`，实际位置可在 **Settings → Storage & recovery** 查看。以下配置写入 `.env`，修改后重启生效：
+
+| 配置 | 默认值 / 用途 |
+| --- | --- |
+| `PAPERFLOW_DATA_DIR` | 数据目录，使用绝对路径 |
+| `PAPERFLOW_PORT` | `8000`，服务仅监听本机地址 |
+| `PAPERFLOW_MAX_UPLOAD_MB` | `100`，单个 PDF 上传上限 |
+| `PAPERFLOW_MARKER_TIMEOUT` | `1800`，转换超时秒数 |
+| `PAPERFLOW_METADATA_ONLINE` | `true`，允许向 arXiv / Crossref 查询元信息 |
+| `PAPERFLOW_DISCOVERY_ONLINE` | `true`，允许发现任务联网 |
+
+DeepSeek Key 可在设置中保存，也可通过 `PAPERFLOW_DEEPSEEK_API_KEY` 配置；环境变量优先。Key 仅保存在服务端，不在页面回显，普通备份不包含本机 Key 文件。
+
+更换数据目录时，请先备份再恢复；修改路径本身不会迁移已有论文库。
+
+</details>
+
+## 备份与更新
+
+先按 `Ctrl-C` 停止服务，再备份：
+
+```sh
+make backup
+```
+
+备份默认保存在数据目录的 `backups/` 下，包含论文库、论文文件、分类和阅读记录；不包含 `.env`、API Key 文件、Python 环境或模型缓存。
+
+获取新版源码后，保留已有 `.env`，在项目目录执行：
 
 ```sh
 make install PYTHON=python3
@@ -72,160 +183,10 @@ make build
 make serve
 ```
 
+<details>
+<summary>从备份恢复</summary>
 
-
-## 使用说明
-
-
-
-### 添加论文
-
-点击右上角 **Add Paper**，选择导入方式：
-
-- **PDF**：把文件拖入弹窗，或点击“选择 PDF 文件”。支持一次导入多篇，默认单文件上限为 100 MB。文件会复制到论文库，原文件不会被移动或修改。
-- **arXiv**：粘贴论文链接或 ID，例如 `https://arxiv.org/abs/2107.06829`、`2107.06829` 或 `2107.06829v1`。应用会在后台获取标题、作者、摘要，以及来源提供的单位和发表信息。
-
-arXiv 导入默认只保存条目和链接。看到 **Remote only** 时，点击该论文的 **PDF**，再点击 **Download PDF**，下载后即可离线阅读。元信息获取失败不会丢失条目，可以点击“重试元信息”，也可以自行编辑。
-
-### 按文件夹分类
-
-点击侧栏“文件夹”旁的 **+** 创建顶层文件夹，例如“机器人研究”。进入文件夹后，点击 **新建子文件夹**，可以继续建立“SLAM”“运动规划”等分类，子文件夹里也可以继续创建文件夹。
-
-侧栏可以展开、收起文件夹，页面上方的路径可以返回上级。当前文件夹展示它的直接子文件夹和直接归类的论文；**All papers** 中可以查看各层的全部论文。不同父目录下允许使用相同的子文件夹名称。
-
-进入文件夹后点击 **Add Paper**，新论文默认存入当前分类。已有论文点击 **整理**，按完整路径勾选一个或多个文件夹并保存；取消全部勾选后，论文会出现在“未分类”中。文件夹旁的 **…** 可以修改名称或上级目录，也可以新建子文件夹。删除文件夹会同时移除其所有子分类，论文原文和阅读进度仍保留在 Library 中。
-
-进入分类后，点击 **在 Finder 中打开**，可以看到对应的 PDF 目录：
-
-```text
-~/Library/Application Support/PaperFlow/folders/机器人研究/SLAM/准备精读/
-```
-
-Finder 中保存的是独立副本，阅读器仍使用论文库中的原始 PDF。一篇论文放入多个分类会保存多份副本；远程条目下载 PDF 后才会生成副本。
-
-也可以直接在上述目录中按层级整理，应用运行时会在几秒内同步：
-
-- 新建、重命名或移动文件夹及子文件夹，会同步为应用里的分类和层级。
-- 放入 PDF 会自动导入；复制到其他文件夹会增加分类，移动会改变分类。同一份 PDF 不会重复创建论文。
-- 删除 PDF 副本只取消该文件夹的分类；删除文件夹会移除对应分类。论文原文和阅读进度仍在 Library 中。
-- PDF 文件名可以自己修改，论文标题以详情中的元信息为准。应用停止期间的整理会在下次启动时同步。
-
-请保留各层目录里的隐藏文件 `.paperflow.json`，用于识别分类和已同步的文件。PDF 内容发生改动时会提示冲突，原文不会被覆盖；需要保留修改版时，将它另存为新文件名即可导入。其他类型文件保留原样。冲突处理后可点击“重试 Finder 同步”。
-
-在应用中删除分类后，保留的修改版和额外文件不会再次自动导入；需要重新归类时，可以新建同名分类或将 PDF 放入其他分类目录。
-
-### 阅读论文
-
-
-| 入口                    | 适合什么场景             | 阅读进度            |
-| --------------------- | ------------------ | --------------- |
-| **PDF**               | 查看原始排版，核对公式和图表     | 保存页码、缩放和滚动位置    |
-| **Official HTML ↗**   | 阅读 arXiv 提供的官方网页版本 | 外部标签页打开，不记录滚动位置 |
-| **HTML / Local HTML** | 连续阅读转换后的正文，调整字号和宽度 | 保存章节和滚动位置       |
-
-
-官方 HTML 只有确认可访问后才会提供。没有本地 HTML 时，点击 **Convert**，完成后会出现 **HTML** 按钮。转换期间可以继续阅读 PDF；转换结果不理想时，也可以随时回到原文。
-
-HTML 阅读页可以配合浏览器翻译插件使用。
-
-### 管理论文库
-
-论文行右侧可以修改阅读状态。点击 **…** 编辑标题、作者、单位、会议／期刊、DOI、年份、摘要、来源链接和标签，也可以删除论文。删除会再次确认，只清理该条目在 PaperFlow 数据目录内的资产，不会删除最初导入的原文件。
-
-上传 PDF 后，应用会在本机读取前两页的文字；找到 DOI 或 arXiv ID 时，向 arXiv、Crossref 查询元信息，不上传 PDF。详情中的 **查找元信息** 也可以按标题和作者检索；出现候选后，核对并点击 **采用这条信息**。来源未提供的字段可以自行填写，手动修改的内容不会被后续自动更新覆盖。
-
-有正式期刊或会议发表信息的论文，会优先显示正式来源，同时保留 arXiv 链接；只有 arXiv 的论文则显示 arXiv。采用候选时会更新为该记录的 DOI。
-
-按 `/` 聚焦搜索，按 `Esc` 关闭弹窗。在 **Settings** 中可以调整浅色 / 深色主题、HTML 字号、正文宽度，以及转换模式和自动转换选项。
-
-## 配置 Marker
-
-PaperFlow 使用 [Marker](https://github.com/datalab-to/marker) 在本机将 PDF 转成 HTML。转换器安装在独立环境中，只有点击转换时才运行。
-
-### 1. 安装转换器
-
-在项目目录中，用前面准备好的 Python 执行：
-
-```sh
-python3 -m venv .marker-venv
-.marker-venv/bin/python -m pip install -r backend/marker-requirements.lock
-```
-
-Apple Silicon 上还需要安装 llama.cpp 提供的 `llama-server`。如果使用 Homebrew：
-
-```sh
-brew install llama.cpp
-command -v llama-server
-```
-
-也可以使用 [llama.cpp 官方二进制](https://github.com/ggml-org/llama.cpp/releases)，Apple Silicon 选择 arm64 版本。
-
-### 2. 设置路径
-
-编辑项目根目录的 `.env`，填写自己机器上的绝对路径，路径包含空格时保留引号：
-
-```dotenv
-PAPERFLOW_MARKER_EXECUTABLE="/absolute/path/PaperFlow/.marker-venv/bin/marker_single"
-LLAMA_CPP_BINARY="/opt/homebrew/bin/llama-server"
-```
-
-`LLAMA_CPP_BINARY` 使用 `command -v llama-server` 返回的实际路径。如果希望指定模型缓存位置，还可以加入：
-
-```dotenv
-HF_HOME="/Users/you/Library/Caches/PaperFlow/models"
-```
-
-重启应用，在 **Settings → Conversion** 检查是否检测到 Marker。运行 `make doctor` 可以检查配置路径，不会加载模型。
-
-### 3. 转换与重试
-
-在论文行点击 **Convert**。任务在后台排队，一次转换一篇；运行中可以取消，失败可以重试。已有 HTML 可以点击“重建 HTML”，新结果成功前会保留旧版本。
-
-默认使用 **Fast** 模式，导入后自动转换默认关闭。首次转换会联网下载模型，之后复用本地缓存。
-
-## 数据与配置
-
-默认数据目录为：
-
-```text
-~/Library/Application Support/PaperFlow/
-```
-
-数据库、PDF、生成的 HTML、图片和 Finder 分类目录都保存在这里。实际位置可以在 **Settings → Storage & recovery** 查看。
-
-常用配置写在 `.env` 中，修改后重启生效：
-
-
-| 配置                         | 默认值    | 用途                 |
-| -------------------------- | ------ | ------------------ |
-| `PAPERFLOW_DATA_DIR`       | 上述数据目录 | 自定义存储位置，使用绝对路径     |
-| `PAPERFLOW_PORT`           | `8000` | 服务端口               |
-| `PAPERFLOW_MARKER_TIMEOUT` | `1800` | 单次转换超时，单位为秒        |
-| `PAPERFLOW_MAX_UPLOAD_MB`  | `100`  | 单个 PDF 上传上限，单位为 MB |
-| `PAPERFLOW_METADATA_ONLINE` | `true` | 是否向 arXiv／Crossref 查询元信息；设为 `false` 只在本机提取 |
-
-
-更换数据目录不会自动迁移已有论文库。需要搬迁时，先备份，再恢复到新目录。服务只监听 `127.0.0.1`，已缓存的论文可以离线阅读；arXiv 获取和首次模型下载需要网络。
-
-## 备份与恢复
-
-先停止应用，再运行：
-
-```sh
-make backup
-```
-
-归档默认放在数据目录的 `backups/` 下，命令会打印完整路径。备份包含数据库、论文资产和 Finder 分类目录，包括其中的额外文件；不包含 `.env`、Python 环境或模型缓存。建议把 ZIP 再复制到另一块磁盘。
-
-需要指定备份位置时：
-
-```sh
-.venv/bin/python scripts/backup.py backup \
-  --data-dir "/path/to/data" \
-  --archive "/path/to/paperflow-backup.zip"
-```
-
-保持应用停止，将备份恢复到一个**尚不存在的新目录**：
+保持应用停止，将备份恢复到一个尚不存在的新目录：
 
 ```sh
 .venv/bin/python scripts/backup.py restore \
@@ -233,26 +194,19 @@ make backup
   --target "/path/to/restored-data"
 ```
 
-然后把 `.env` 中的 `PAPERFLOW_DATA_DIR` 指向恢复目录，运行 `make serve`，检查论文、分类和阅读位置。恢复会校验文件和数据库；不要只复制 `paperflow.sqlite3` 来备份。
+将 `.env` 中的 `PAPERFLOW_DATA_DIR` 改为恢复目录，再运行 `make serve`。恢复后检查论文、分类和阅读位置，并重新配置本机保存的 DeepSeek Key。请使用完整备份，不要只复制数据库文件。
+
+</details>
 
 ## 常见问题
 
-**页面打不开，或提示端口被占用？** 检查终端里的服务是否仍在运行，先停止之前的实例。改过 `PAPERFLOW_PORT` 时，浏览器地址也要使用对应端口。
+- **端口被占用？** 先停止已有 PaperFlow 服务，再运行 `make serve`。修改过端口时，浏览器地址也要对应修改。
+- **首页只显示 “PaperFlow API ready”？** 执行 `make build` 后刷新。
+- **开启 AI 后还没有推荐？** 保存设置后到 Discover 点击「检查新论文」，查看抓取与分析进度；开启开关本身不会立即新建分析任务。
+- **Marker 未识别或转换失败？** 运行 `make doctor`，核对 Marker 与 llama-server 路径、网络和可用内存。Marker 在独立环境中，后端环境提示 `marker-pdf: MISSING` 属于正常情况。
 
-**首页只有 “PaperFlow API ready”？** 执行 `make build` 后刷新页面。
+## 反馈与许可
 
-**Marker 没检测到，或转换失败？** 运行 `make doctor`，检查 `Configured Marker` 和 `Configured llama-server` 的路径，再核对网络、磁盘空间和可用内存。转换器在独立环境中，诊断里后端的 `marker-pdf: MISSING` 是正常的。中断任务在重启后可以重试，原始 PDF 保留。
+欢迎通过 [Issues](https://github.com/zhnnky329/PaperFlow/issues) 反馈问题，请附系统版本、复现步骤和错误提示，避免上传私人论文、密钥或数据库。
 
-## 反馈
-
-欢迎通过 [Issues](https://github.com/zhnnky329/PaperFlow/issues) 反馈问题或提出建议。请附系统版本、复现步骤和错误提示；转换问题可补充公开论文链接。请勿上传私人论文、密钥或个人数据库。
-
-## 许可证
-
-PaperFlow 使用 [MIT License](LICENSE)。第三方依赖和模型权重遵循各自的许可证。
-
-## 致谢
-
-感谢 [Marker](https://github.com/datalab-to/marker) 的作者与贡献者。PaperFlow 的 PDF 转 HTML 功能基于 Marker，论文中的正文、公式、图片和表格由它提取，再交给本地阅读器展示。
-
-也感谢 [PDF.js](https://github.com/mozilla/pdf.js) 和 [KaTeX](https://github.com/KaTeX/KaTeX)，分别提供 PDF 渲染和公式显示。
+项目使用 [MIT License](LICENSE)，第三方依赖与模型遵循各自许可。感谢 [Marker](https://github.com/datalab-to/marker)、[PDF.js](https://github.com/mozilla/pdf.js) 和 [KaTeX](https://github.com/KaTeX/KaTeX) 提供 PDF 转换、渲染与公式支持。

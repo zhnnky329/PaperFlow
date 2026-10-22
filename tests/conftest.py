@@ -23,7 +23,11 @@ def pdf_bytes():
 
 @pytest.fixture
 def config(tmp_path):
-    return Config(data_dir=tmp_path / "library", marker_executable="/missing/marker", max_upload_mb=1)
+    return Config(
+        data_dir=tmp_path / "library", marker_executable="/missing/marker", max_upload_mb=1,
+        discovery_online=False,
+        deepseek_api_key="",
+    )
 
 
 @pytest.fixture

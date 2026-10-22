@@ -1,5 +1,6 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -16,6 +17,8 @@ class Config(BaseSettings):
     marker_timeout: int = 1800
     max_upload_mb: int = 100
     metadata_online: bool = True
+    discovery_online: bool = True
+    deepseek_api_key: SecretStr = SecretStr("")
 
     def path(self, relative: str) -> Path:
         base = self.data_dir.resolve()

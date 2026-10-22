@@ -76,6 +76,88 @@ export type Position = {
   html_anchor: string;
   scroll_ratio: number;
 };
+export type DiscoveryInterest = {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  exclude_keywords: string[];
+  priority: 1 | 2 | 3;
+};
+export type DiscoverySettings = {
+  auto_update: boolean;
+  interval_hours: number;
+  min_score: number;
+  max_analyses: number;
+  try_full_text: boolean;
+  ai_enabled: boolean;
+  model: string;
+  token_budget: number;
+  max_output_tokens: number;
+  interest_description: string;
+  interests: DiscoveryInterest[];
+  api_key_configured: boolean;
+  api_key_source: "environment" | "local" | null;
+};
+export type DiscoveryRun = {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  trigger: string;
+  stage: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  fetched_count: number;
+  new_count: number;
+  analyzed_count: number;
+  recommended_count: number;
+  tokens_used: number;
+  tokens_reserved: number;
+  error_code: string | null;
+  error_message: string | null;
+};
+export type DiscoveryStatus = {
+  active_run: DiscoveryRun | null;
+  last_run: DiscoveryRun | null;
+  last_checked_at: string | null;
+  next_check_at: string | null;
+  new_count: number;
+  pending_count: number;
+  key_configured: boolean;
+  usage: { tokens_used: number; tokens_reserved: number };
+  online: boolean;
+};
+export type DiscoveryPaper = {
+  id: string;
+  arxiv_id: string;
+  arxiv_version: number;
+  doi: string | null;
+  title: string;
+  authors: string[];
+  abstract: string;
+  categories: string[];
+  published_at: string;
+  updated_at: string;
+  source_url: string;
+  venue: string | null;
+  first_seen_at: string;
+  analysis_status: "pending" | "running" | "succeeded" | "failed" | "filtered";
+  analysis: {
+    decision: "recommend" | "skip";
+    score: number;
+    matched_directions: string[];
+    reason: string;
+    summary: string;
+    basis: "full_text" | "partial_text" | "abstract";
+    source_url: string;
+    tokens_used: number;
+  } | null;
+  analyzed_at: string | null;
+  analysis_error: string | null;
+  feedback: "none" | "interested" | "later" | "dismissed";
+  paper_id: string | null;
+  is_new: boolean;
+};
 export async function api<T>(
   path: string,
   options: RequestInit = {},

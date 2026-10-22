@@ -14,6 +14,7 @@ import {
   X,
   ChevronRight,
   ChevronDown,
+  Compass,
 } from "lucide-react";
 import {
   api,
@@ -23,9 +24,12 @@ import {
   type Paper,
   type Settings,
   type Label,
+  type DiscoveryStatus,
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/Modal";
+import { Discover } from "./Discover";
+import { DiscoverySettings } from "./DiscoverySettings";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
@@ -85,7 +89,14 @@ function PublicationSources({ paper }: { paper: Paper }) {
   });
 }
 
-export function App({ settingsPage = false }: { settingsPage?: boolean }) {
+export function App({
+  settingsPage = false,
+  discoverPage = false,
+}: {
+  settingsPage?: boolean;
+  discoverPage?: boolean;
+}) {
+  const [discoveryCount, setDiscoveryCount] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const collection = searchParams.get("folder") || "";
   function setCollection(value: string) {
@@ -205,6 +216,21 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
     api<Settings>("/settings")
       .then(setConfig)
       .catch((e) => setError(message(e)));
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    const refresh = () =>
+      api<DiscoveryStatus>("/discovery/status")
+        .then((result) => {
+          if (alive) setDiscoveryCount(result.new_count);
+        })
+        .catch(() => {});
+    refresh();
+    const interval = setInterval(refresh, 10000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
   }, []);
   useEffect(() => {
     if (config) document.documentElement.dataset.theme = config.theme;
@@ -409,7 +435,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
         <nav aria-label="论文库导航">
           <Link
             className={
-              !settingsPage && !status && !collection
+              !settingsPage && !discoverPage && !status && !collection
                 ? "nav-item active"
                 : "nav-item"
             }
@@ -422,10 +448,27 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             <LibraryIcon size={16} />
             <span className="nav-label">All papers</span>
           </Link>
+          <Link
+            to="/discover"
+            className={discoverPage ? "nav-item active" : "nav-item"}
+          >
+            <Compass size={16} />
+            <span className="nav-label">Discover</span>
+            {discoveryCount > 0 && (
+              <span
+                className="discovery-nav-count"
+                aria-label={`${discoveryCount} 篇新增推荐`}
+              >
+                {discoveryCount > 99 ? "99+" : discoveryCount}
+              </span>
+            )}
+          </Link>
           {(["unread", "reading", "finished"] as const).map((s) => (
             <Link
               className={
-                !settingsPage && status === s ? "nav-item active" : "nav-item"
+                !settingsPage && !discoverPage && status === s
+                  ? "nav-item active"
+                  : "nav-item"
               }
               to="/"
               key={s}
@@ -451,7 +494,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
           <Link
             to="/?folder=unfiled"
             className={
-              collection === "unfiled" && !settingsPage
+              collection === "unfiled" && !settingsPage && !discoverPage
                 ? "nav-item active"
                 : "nav-item"
             }
@@ -505,7 +548,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                   <Link
                     to={`/?folder=${c.id}`}
                     className={
-                      !settingsPage && collection === c.id
+                      !settingsPage && !discoverPage && collection === c.id
                         ? "nav-item active"
                         : "nav-item"
                     }
@@ -543,6 +586,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
         </div>
       </aside>
       <main className="workspace">
+        {discoverPage ? <Discover onNewCountChange={setDiscoveryCount} /> : <>
         <header className="workspace-header">
           <div className="workspace-heading">
             <h1>
@@ -776,6 +820,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
                     scripts/backup.py 的 restore 子命令。先验证备份，再升级。
                   </p>
                 </section>
+                <DiscoverySettings />
               </>
             ) : (
               <p>正在加载设置…</p>
@@ -1261,6 +1306,7 @@ export function App({ settingsPage = false }: { settingsPage?: boolean }) {
             </footer>
           </>
         )}
+        </>}
       </main>
       {add && (
         <Modal

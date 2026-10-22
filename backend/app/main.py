@@ -9,6 +9,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Literal
+from types import SimpleNamespace
 from uuid import UUID
 from fastapi import FastAPI, HTTPException, Request, UploadFile, Query
 from fastapi.exceptions import RequestValidationError
@@ -48,6 +49,8 @@ from .html import reader_document
 from . import arxiv, metadata
 from .folders import FolderSync, FolderConflict, folder_name
 from .collection_tree import collection_descendants, collection_info, collection_path, CollectionTreeError
+from .discovery import DiscoveryWorker
+from .discovery_api import register_discovery
 
 
 def create_app(config=None):
@@ -56,6 +59,7 @@ def create_app(config=None):
     worker = Worker(config, sessions)
     import_lock = threading.RLock()
     folder_sync = FolderSync(config, sessions, import_lock)
+    discovery = DiscoveryWorker(config, sessions)
     metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="metadata")
     metadata_pending = set()
     metadata_lock = threading.Lock()
@@ -124,9 +128,11 @@ def create_app(config=None):
             session.commit()
         worker.start()
         folder_sync.start()
+        discovery.start()
         try:
             yield
         finally:
+            discovery.stop()
             folder_sync.stop()
             metadata_pool.shutdown(wait=True, cancel_futures=True)
             worker.stop()
@@ -139,6 +145,7 @@ def create_app(config=None):
     app = FastAPI(title="PaperFlow", version="0.1.0", lifespan=lifespan)
     app.state.sessions, app.state.worker, app.state.config = sessions, worker, config
     app.state.folder_sync = folder_sync
+    app.state.discovery = discovery
 
     @app.middleware("http")
     async def security(request: Request, call_next):
@@ -356,10 +363,20 @@ def create_app(config=None):
             stage.unlink(missing_ok=True)
             file.file.close()
 
-    @app.post("/api/v1/papers/arxiv", status_code=202)
-    def import_arxiv(body: ArxivInput):
-        canonical, version = arxiv.parse(body.input)
+    def create_arxiv_record(value, seed=None):
+        canonical, version = arxiv.parse(value)
+        if seed:
+            version = seed["arxiv_version"]
         with import_lock, sessions() as session:
+            if seed:
+                from .discovery import library_match
+
+                match = library_match(session, SimpleNamespace(
+                    arxiv_id=canonical, doi=seed.get("doi"), arxiv_aliases=seed.get("arxiv_aliases", []),
+                    paper_id=seed.get("paper_id"),
+                ))
+                if match:
+                    return {"paper": serialize(session, match), "dedupe": True}
             paper = session.scalar(
                 select(Paper).where(Paper.arxiv_id == canonical, Paper.arxiv_version == version)
             )
@@ -373,12 +390,35 @@ def create_app(config=None):
                     source_url="https://arxiv.org/abs/" + canonical + (f"v{version}" if version else ""),
                     metadata_status="pending",
                 )
+                if seed:
+                    paper.title, paper.authors = seed["title"], seed["authors"]
+                    paper.abstract, paper.doi, paper.venue = seed["abstract"], seed["doi"], seed["venue"]
+                    paper.year = int(seed["published_at"][:4])
+                    paper.metadata_status = "ready"
+                    paper.metadata_sources = {
+                        field: "arxiv" for field in ("title", "authors", "abstract", "year", "doi", "venue")
+                        if getattr(paper, field) is not None
+                    }
+                    analysis = seed.get("analysis") or {}
+                    official = analysis.get("source_url")
+                    if official and analysis.get("basis") in ("full_text", "partial_text"):
+                        from urllib.parse import urlsplit
+
+                        if (urlsplit(official).path.startswith("/html/")
+                                and arxiv.parse(official) == (canonical, version)):
+                            paper.official_html_url = official
                 session.add(paper)
                 session.commit()
             result = serialize(session, paper)
-        if not dedupe:
+        if not dedupe and not seed:
             schedule_metadata(paper.id)
         return {"paper": result, "dedupe": dedupe}
+
+    @app.post("/api/v1/papers/arxiv", status_code=202)
+    def import_arxiv(body: ArxivInput):
+        return create_arxiv_record(body.input)
+
+    register_discovery(app, discovery, sessions, create_arxiv_record, import_lock)
 
     @app.get("/api/v1/papers/{paper_id}")
     def get_paper(paper_id: UUID):
@@ -876,7 +916,7 @@ def create_app(config=None):
     def spa(path: str):
         if path.startswith(("api/", "paper-assets/", "read/")):
             raise HTTPException(404, "路由不存在")
-        if path not in ("", "settings") and not re.fullmatch(r"papers/[0-9a-f-]{36}/pdf", path):
+        if path not in ("", "settings", "discover") and not re.fullmatch(r"papers/[0-9a-f-]{36}/pdf", path):
             raise HTTPException(404, "页面不存在")
         if (dist / "index.html").is_file():
             return FileResponse(dist / "index.html")
