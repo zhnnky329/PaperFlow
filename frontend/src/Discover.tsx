@@ -46,15 +46,20 @@ export function Discover({
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [revision, setRevision] = useState(0);
+  const [markedSeen, setMarkedSeen] = useState(false);
   const params = discoveryQuery({ view, sort, interest, minScore, page });
 
   useEffect(() => {
     api("/discovery/seen", { method: "POST" })
-      .then(() => onNewCountChange(0))
-      .catch(() => {});
+      .then(() => {
+        onNewCountChange(0);
+        setMarkedSeen(true);
+      })
+      .catch(() => setMarkedSeen(true));
   }, [onNewCountChange]);
 
   useEffect(() => {
+    if (!markedSeen) return;
     let alive = true;
     setLoading(true);
     async function refresh() {
@@ -87,7 +92,7 @@ export function Discover({
       alive = false;
       clearInterval(interval);
     };
-  }, [params, revision, onNewCountChange]);
+  }, [params, revision, onNewCountChange, markedSeen]);
 
   async function action(key: string, operation: () => Promise<void>) {
     setBusy(key);

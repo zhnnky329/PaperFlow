@@ -4,6 +4,7 @@ import logging
 import logging.handlers
 import os
 import re
+import shutil
 import traceback
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +52,7 @@ from .folders import FolderSync, FolderConflict, folder_name
 from .collection_tree import collection_descendants, collection_info, collection_path, CollectionTreeError
 from .discovery import DiscoveryWorker
 from .discovery_api import register_discovery
+from . import desktop
 
 
 def create_app(config=None):
@@ -666,7 +668,7 @@ def create_app(config=None):
                                         )
                                     )
                                 ),
-                                "finder_path": str(folder_sync.directory(row)),
+                                "folder_path": str(folder_sync.directory(row)),
                             }
                             if model == Collection
                             else {}
@@ -743,7 +745,7 @@ def create_app(config=None):
                 counts[collection_id] = counts.get(collection_id, 0) + 1
             result = [
                 collection_info(row, rows)
-                | {"paper_count": counts.get(row.id, 0), "finder_path": str(folder_sync.directory(row))}
+                | {"paper_count": counts.get(row.id, 0), "folder_path": str(folder_sync.directory(row))}
                 for row in rows.values()
             ]
             return sorted(result, key=lambda row: (row["path"].casefold(), row["id"]))
@@ -838,7 +840,6 @@ def create_app(config=None):
     @app.post("/api/v1/collections/{item_id}/reveal")
     def reveal_folder(item_id: UUID):
         import subprocess
-        import sys
 
         with sessions() as session:
             row = session.get(Collection, str(item_id))
@@ -847,13 +848,11 @@ def create_app(config=None):
             folder_sync.root  # Refuse a symlinked root before revealing any path.
             path = folder_sync.directory(row)
             if path.is_symlink() or not path.is_dir() or folder_sync.manifest(path)["id"] != row.id:
-                raise HTTPException(409, "Finder 文件夹尚未同步，请等待或重试同步")
-        if sys.platform != "darwin":
-            raise HTTPException(501, "自动打开 Finder 仅支持 macOS")
+                raise HTTPException(409, "本地文件夹尚未同步，请等待或重试同步")
         try:
-            subprocess.run(["/usr/bin/open", str(path)], check=True, timeout=5, capture_output=True)
+            desktop.open_folder(path)
         except (OSError, subprocess.SubprocessError) as exc:
-            raise HTTPException(503, "无法打开 Finder，请按显示的路径手动打开") from exc
+            raise HTTPException(503, "无法打开文件管理器，请复制文件夹路径后手动打开") from exc
         return {"opened": True}
 
     @app.get("/api/v1/settings")
@@ -861,6 +860,10 @@ def create_app(config=None):
         with sessions() as session:
             return settings(session) | {
                 "marker_available": bool(worker.executable()),
+                "marker_device": config.marker_device,
+                "marker_backend": "llamacpp",
+                "llama_available": bool(shutil.which(config.llama_cpp_binary)),
+                "folder_open_available": desktop.folder_opener() is not None,
                 "data_dir": str(config.data_dir),
                 "folders_root": str(config.data_dir / "folders"),
                 "folder_sync": (

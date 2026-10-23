@@ -1,0 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cu130
+-r marker-requirements.lock
+torch==2.14.1+cu130
+torchvision==0.29.1+cu130

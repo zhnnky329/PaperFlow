@@ -207,7 +207,7 @@ test("cached metadata search → candidate confirmation → persisted details", 
   const { execFileSync } = await import("node:child_process");
   // A deposited Crossref response fixture in the isolated test library's cache.
   // The real worker, API, SQLite and UI still process/confirm this candidate.
-  execFileSync("../.venv/bin/python", [
+  execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
     "-c",
     `
 import hashlib, json, sqlite3, sys, time
@@ -241,7 +241,7 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as database:
     .toBe("needs_review");
   // Add an arXiv association in this isolated fixture after the lookup, so
   // presentation coverage does not depend on an external arXiv request.
-  execFileSync("../.venv/bin/python", [
+  execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
     "-c",
     `
 import sqlite3, sys

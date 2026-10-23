@@ -68,9 +68,12 @@ async function installFixtures(page: Page, theme: Settings["theme"]) {
     marker_mode: "fast",
     auto_convert_on_import: false,
     marker_available: false,
-    data_dir: "/tmp/paperflow-e2e-visual/Library/Application Support/PaperFlow",
-    folders_root:
-      "/tmp/paperflow-e2e-visual/Library/Application Support/PaperFlow/folders",
+    marker_device: "cpu",
+    marker_backend: "llamacpp",
+    llama_available: false,
+    folder_open_available: false,
+    data_dir: "/tmp/paperflow-e2e-visual/paperflow",
+    folders_root: "/tmp/paperflow-e2e-visual/paperflow/folders",
     folder_sync: { status: "succeeded", error: null },
   };
   let position: Position = {

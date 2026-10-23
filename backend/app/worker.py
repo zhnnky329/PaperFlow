@@ -78,7 +78,14 @@ class Worker:
         executable = self.executable()
         if not executable:
             raise HTTPException(503, "Marker CLI 未安装，请配置 PAPERFLOW_MARKER_EXECUTABLE")
-        config = {"mode": settings(session)["marker_mode"], "output_format": "html"}
+        config = {
+            "mode": settings(session)["marker_mode"],
+            "output_format": "html",
+            "inference_backend": "llamacpp",
+            "device": self.config.marker_device,
+            "llama_cpp_binary": shutil.which(self.config.llama_cpp_binary) or self.config.llama_cpp_binary,
+            "llama_cpp_ngl": "0" if self.config.marker_device == "cpu" else str(self.config.llama_cpp_gpu_layers),
+        }
         # Include actual isolated package metadata without loading models.
         python = Path(executable).parent / "python"
         try:
@@ -156,6 +163,7 @@ class Worker:
                 paper = session.get(Paper, job.paper_id)
                 paper_id = paper.id
                 source = self.config.path(paper.pdf_path)
+                conversion_settings = dict(job.settings)
                 argv = [
                     self.executable(),
                     str(source),
@@ -174,7 +182,21 @@ class Worker:
                 environment = {
                     k: v for k, v in os.environ.items() if "KEY" not in k.upper() and "TOKEN" not in k.upper()
                 }
+                for name in ("ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "http_proxy", "https_proxy"):
+                    if environment.get(name, "").startswith("socks://"):
+                        environment[name] = "socks5://" + environment[name][len("socks://") :]
                 environment.pop("SURYA_INFERENCE_URL", None)
+                # Explicit native backend: NVIDIA autodetection would otherwise
+                # launch a Docker vLLM server with unrelated memory/port defaults.
+                environment["SURYA_INFERENCE_BACKEND"] = "llamacpp"
+                device = conversion_settings.get("device", self.config.marker_device)
+                environment["TORCH_DEVICE"] = device
+                environment["LLAMA_CPP_BINARY"] = conversion_settings.get(
+                    "llama_cpp_binary", self.config.llama_cpp_binary
+                )
+                environment["LLAMA_CPP_NGL"] = conversion_settings.get(
+                    "llama_cpp_ngl", "0" if device == "cpu" else str(self.config.llama_cpp_gpu_layers)
+                )
                 environment["SURYA_INFERENCE_KEEP_ALIVE"] = "0"
                 environment["SURYA_INFERENCE_HOST"] = "127.0.0.1"
                 environment["SURYA_INFERENCE_PARALLEL"] = "1"
@@ -237,7 +259,7 @@ class Worker:
                 if job and job.status == "running":
                     job.status = "failed"
                     job.error_code = "INTERRUPTED" if self.stop_event.is_set() else "CONVERSION_FAILED"
-                    job.error_message = "Marker 转换未完成。请检查 CLI、首次模型下载、llama-server 和内存后重试；PDF 可继续阅读。"
+                    job.error_message = "Marker 转换未完成。请运行 make doctor，检查 CLI、模型下载、llama-server、设备与内存；PDF 可继续阅读。"
                     job.finished_at = now()
                     session.commit()
         finally:

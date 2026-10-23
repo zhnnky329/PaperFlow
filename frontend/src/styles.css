@@ -4,7 +4,7 @@
    Layers: PDF text 2, sticky reader chrome 5, native dialog top layer. */
 :root {
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    system-ui, Ubuntu, "Noto Sans CJK SC", sans-serif;
   font-size: 14px;
   font-synthesis: none;
   color-scheme: light;

@@ -56,3 +56,17 @@ def test_occupied_port_does_not_open_an_existing_service(monkeypatch, tmp_path):
         assert module.main(["serve"]) == 1
         assert calls == []
         assert existing.getsockname()[1] == port
+
+
+def test_old_default_library_requires_explicit_migration_before_start(monkeypatch, tmp_path, capsys):
+    module = launcher(monkeypatch, tmp_path, 8000)
+    monkeypatch.delenv("PAPERFLOW_DATA_DIR")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local/share"))
+    legacy = tmp_path / "Library/Application Support/PaperFlow/paperflow.sqlite3"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_bytes(b"existing library")
+    assert module.main(["serve", "--no-open"]) == 1
+    assert "PAPERFLOW_DATA_DIR" in capsys.readouterr().err
+    assert legacy.read_bytes() == b"existing library"
+    assert not (tmp_path / ".local/share/paperflow").exists()

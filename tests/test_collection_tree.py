@@ -65,7 +65,7 @@ def test_nested_folders_names_paths_and_counts(tree_client):
     }
     rows = {row["id"]: row for row in client.get("/api/v1/collections").json()}
     assert rows[first["id"]]["paper_count"] == 0
-    assert Path(rows[first["id"]]["finder_path"]).parts[-2:] == ("Robotics", "Straße")
+    assert Path(rows[first["id"]]["folder_path"]).parts[-2:] == ("Robotics", "Straße")
     sibling = create_folder(client, "Mapping", root["id"])
     collision = client.patch("/api/v1/collections/" + sibling["id"], json={"name": "STRASSE"})
     assert collision.status_code == 409

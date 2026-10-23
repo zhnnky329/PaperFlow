@@ -34,6 +34,8 @@ def folder_name(value):
         raise FolderConflict("文件夹名称不能包含 /、\\、冒号、控制字符，也不能以点开头")
     if len(name) > 80:
         raise FolderConflict("文件夹名称不能超过 80 个字符")
+    if len(name.encode("utf-8")) > 255:
+        raise FolderConflict("文件夹名称的 UTF-8 编码不能超过 255 字节，请缩短名称")
     return name
 
 
@@ -176,7 +178,7 @@ class FolderSync:
                 self.state(
                     {
                         "status": "failed",
-                        "error": "Finder 同步失败，请检查磁盘空间和目录权限后重试。原始 PDF 仍可阅读。",
+                        "error": "文件夹同步失败，请检查磁盘空间和目录权限后重试。原始 PDF 仍可阅读。",
                     }
                 )
             finally:
@@ -186,7 +188,7 @@ class FolderSync:
                         self.new_papers.discard(paper_id)
                     except Exception:
                         self.state(
-                            {"status": "failed", "error": "Finder 导入已保存，但后台识别未启动，请重试同步。"}
+                            {"status": "failed", "error": "文件夹导入已保存，但后台识别未启动，请重试同步。"}
                         )
 
     def manifest(self, directory):
@@ -239,19 +241,19 @@ class FolderSync:
             parent.check()
             entries = os.listdir(parent.fd)
             if len(entries) > 5000 or len(result) > 25000:
-                raise FolderConflict("Finder 目录条目过多，请分批整理论文")
+                raise FolderConflict("本地目录条目过多，请分批整理论文")
             siblings = set()
             for name in sorted(entries):
                 if name.startswith("."):
                     continue
                 info = parent.info(name)
                 if stat.S_ISLNK(info.st_mode):
-                    raise FolderConflict("Finder 中发现符号链接，请移开链接后重试")
+                    raise FolderConflict("文件管理器中发现符号链接，请移开链接后重试")
                 if not stat.S_ISDIR(info.st_mode):
                     continue
                 normalized = folder_name(name).casefold()
                 if normalized in siblings:
-                    raise FolderConflict("Finder 中有大小写或字符规范化后同名的文件夹，请重新命名")
+                    raise FolderConflict("文件管理器中有大小写或字符规范化后同名的文件夹，请重新命名")
                 siblings.add(normalized)
                 if depth >= MAX_COLLECTION_DEPTH:
                     raise FolderConflict(f"文件夹最多支持 {MAX_COLLECTION_DEPTH} 层")
@@ -267,7 +269,7 @@ class FolderSync:
                         continue
                     info = directory.info(filename)
                     if stat.S_ISLNK(info.st_mode):
-                        raise FolderConflict("Finder 中发现符号链接，请移开链接后重试")
+                        raise FolderConflict("文件管理器中发现符号链接，请移开链接后重试")
                     if stat.S_ISDIR(info.st_mode) or not filename.lower().endswith(".pdf"):
                         continue
                     if not stat.S_ISREG(info.st_mode):
@@ -344,7 +346,7 @@ class FolderSync:
                 temporary, filename, src_dir_fd=directory.fd, dst_dir_fd=directory.fd, follow_symlinks=False
             )
         except FileExistsError as exc:
-            raise FolderConflict("Finder 中的同名文件已存在，未覆盖；请改名后重试") from exc
+            raise FolderConflict("文件管理器中的同名文件已存在，未覆盖；请改名后重试") from exc
         finally:
             try:
                 os.unlink(temporary, dir_fd=directory.fd)
@@ -359,7 +361,7 @@ class FolderSync:
             )
             previous = baseline["folders"]
             if previous and not self.root.exists():
-                raise FolderConflict("Finder 根目录已移走，请放回 folders 目录后重试；论文库未删除")
+                raise FolderConflict("分类根目录已移走，请放回 folders 目录后重试；论文库未删除")
             base = stack.enter_context(Directory(str(self.config.data_dir.resolve())))
             try:
                 os.mkdir("folders", dir_fd=base.fd)
@@ -456,7 +458,7 @@ class FolderSync:
                 if old["name"] in scanned:
                     raise FolderConflict("文件夹管理记录已移走，请恢复 .paperflow.json 后重试")
                 if app_paths[identifier] != old["name"] or members[identifier] != set(old["members"]):
-                    raise FolderConflict("应用与 Finder 同时修改了文件夹，请恢复 Finder 目录后重试")
+                    raise FolderConflict("应用与文件管理器 同时修改了文件夹，请恢复 本地目录后重试")
                 removed.add(identifier)
 
             paths_to_ids = {name: identifier for identifier, name in mapping.items()}
@@ -475,7 +477,7 @@ class FolderSync:
                     continue
                 if matching:
                     if matching.id in mapping:
-                        raise FolderConflict("Finder 中有大小写或字符规范化后同名的文件夹，请重新命名")
+                        raise FolderConflict("文件管理器中有大小写或字符规范化后同名的文件夹，请重新命名")
                     identifier = matching.id
                 else:
                     parent_path, _, leaf = name.rpartition("/")
@@ -506,7 +508,7 @@ class FolderSync:
                     # still under that parent and must follow the app move.
                     parent_id = old_ids_by_path.get(parent_path) if name == old["name"] else None
                     if not parent_id:
-                        raise FolderConflict("Finder 父目录尚未同步，请恢复目录后重试")
+                        raise FolderConflict("上级目录尚未同步，请恢复目录后重试")
                 old_parent = old.get("parent_id", old_ids_by_path.get(old["name"].rpartition("/")[0]))
                 old_leaf = old["name"].rsplit("/", 1)[-1]
                 actual_name = folder_name(leaf)
@@ -514,7 +516,7 @@ class FolderSync:
                 app_changed = (collection.parent_id, collection.name) != (old_parent, old_leaf)
                 if finder_changed:
                     if app_changed and (collection.parent_id, collection.name) != (parent_id, actual_name):
-                        raise FolderConflict("应用与 Finder 同时改名或移动，请统一文件夹位置和名称后重试")
+                        raise FolderConflict("应用与文件管理器 同时改名或移动，请统一文件夹位置和名称后重试")
                     collection.parent_id, collection.name = parent_id, actual_name
 
             removed_rows = [collections.pop(identifier) for identifier in removed]
@@ -528,11 +530,11 @@ class FolderSync:
                         raise FolderConflict(f"文件夹最多支持 {MAX_COLLECTION_DEPTH} 层")
                     key = collection.parent_id, folder_name(collection.name).casefold()
                     if key in siblings:
-                        raise FolderConflict("Finder 改名与已有分类同名，请重新命名后重试")
+                        raise FolderConflict("文件管理器改名与已有分类同名，请重新命名后重试")
                     siblings.add(key)
                     targets[collection.id] = path
             except CollectionTreeError as exc:
-                raise FolderConflict("Finder 文件夹层级无效，请恢复目录后重试") from exc
+                raise FolderConflict("本地文件夹层级无效，请恢复目录后重试") from exc
             # Preserve surviving children before cascading a deleted parent.
             session.flush()
             for collection in removed_rows:
@@ -641,7 +643,7 @@ class FolderSync:
                         except FileNotFoundError:
                             existing = None
                         if existing is not None and signature(existing)[:2] != directory.identity:
-                            raise FolderConflict("同名 Finder 目录已经存在，请重新命名分类后重试")
+                            raise FolderConflict("同名 本地目录已经存在，请重新命名分类后重试")
                         old_path = actual_paths[collection_id]
                         os.rename(directory.name, leaf, src_dir_fd=directory.parent.fd, dst_dir_fd=parent.fd)
                         directory.name, directory.parent = leaf, parent
@@ -651,7 +653,7 @@ class FolderSync:
                     try:
                         os.mkdir(leaf, dir_fd=parent.fd)
                     except FileExistsError as exc:
-                        raise FolderConflict("同名 Finder 目录已经存在，请重新命名分类后重试") from exc
+                        raise FolderConflict("同名 本地目录已经存在，请重新命名分类后重试") from exc
                     directory = stack.enter_context(Directory(leaf, parent))
                     directory.check()
                     item = {"files": {}, "manifest": None, "handle": directory}

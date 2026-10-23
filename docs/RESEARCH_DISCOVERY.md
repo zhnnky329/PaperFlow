@@ -4,7 +4,7 @@
 
 ## 现有架构与复用
 
-已检查 `backend/app/{arxiv,metadata,db,main,worker,storage,html}.py`、Alembic、前端路由、API 客户端、样式及测试。数据库模型集中在 db.py；main.py 通过单实例数据目录锁保护本地服务，元信息用单线程池，Marker 有独立持久队列，Finder 有独立对账线程。前端是 React Router + App.tsx 工作台，既有 Settings、Button、主题 token 可复用。
+已检查 `backend/app/{arxiv,metadata,db,main,worker,storage,html}.py`、Alembic、前端路由、API 客户端、样式及测试。数据库模型集中在 db.py；main.py 通过单实例数据目录锁保护本地服务，元信息用单线程池，Marker 有独立持久队列，文件夹同步有独立对账线程。前端是 React Router + App.tsx 工作台，既有 Settings、Button、主题 token 可复用。
 
 复用 arxiv.parse/request 的 ID、官方域名、重定向、限速与流大小限制；复用 metadata.normalize_doi；推荐导入调用与现有 arXiv 导入相同的服务函数，沿用元信息后台队列。Discover 不调用 Marker、不保存候选 PDF、不改变阅读器。网络/AI 使用独立线程，数据库事务只涵盖短暂写入。
 

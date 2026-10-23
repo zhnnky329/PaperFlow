@@ -40,7 +40,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    system-ui, Ubuntu, "Noto Sans CJK SC", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -165,7 +165,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: system-ui, Ubuntu, sans-serif;
   line-height: 1.3;
   scroll-margin-top: calc(var(--reader-header-height) + 24px);
   letter-spacing: -0.025em;

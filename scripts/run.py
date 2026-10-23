@@ -15,13 +15,13 @@ from dotenv import load_dotenv
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "backend"))
-from app.config import Config  # noqa: E402
+from app.config import Config, default_data_dir  # noqa: E402
 
 
 def open_browser(url):
     try:
-        if sys.platform == "darwin":
-            return subprocess.run(["/usr/bin/open", url], timeout=5).returncode == 0
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            return False
         return webbrowser.open(url, new=2)
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -34,6 +34,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     load_dotenv(root / ".env")
     cfg = Config()
+    legacy = Path.home() / "Library/Application Support/PaperFlow"
+    if (
+        "data_dir" not in cfg.model_fields_set
+        and cfg.data_dir == default_data_dir()
+        and not (cfg.data_dir / "paperflow.sqlite3").exists()
+        and (legacy / "paperflow.sqlite3").is_file()
+    ):
+        print(
+            f"发现旧数据目录：{legacy}。请在 .env 中显式设置 PAPERFLOW_DATA_DIR 指向它，"
+            "或先备份恢复到 Ubuntu 数据目录，再启动。",
+            file=sys.stderr,
+        )
+        return 1
     if args.mode == "dev" and cfg.port != 8000:
         print("Dev proxy uses port 8000. Set PAPERFLOW_PORT=8000 for make dev.", file=sys.stderr)
         return 1

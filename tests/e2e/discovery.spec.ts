@@ -17,7 +17,7 @@ test("Discover → persisted feedback → existing arXiv Library import", async 
   const headers = { "X-PaperFlow": "1", Origin: baseURL! };
   // A test-only recommendation deposited in the isolated SQLite database.
   // This verifies real UI/API persistence and import, not a live AI result.
-  execFileSync("../.venv/bin/python", [
+  execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
     "-c",
     `
 import json, sqlite3, sys
@@ -66,7 +66,7 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as db:
     await paper.getByRole("button", { name: "恢复推荐", exact: true }).click();
     await page.getByLabel("推荐范围").selectOption("recommended");
     await expect(paper).toBeVisible();
-    execFileSync("../.venv/bin/python", [
+    execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
       "-c",
       `
 import sqlite3, sys
@@ -81,7 +81,7 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as db:
     await expect(
       paper.getByText("以下为上次分析，当前版本待重新判断。", { exact: true }),
     ).toBeVisible();
-    execFileSync("../.venv/bin/python", [
+    execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
       "-c",
       `
 import sqlite3, sys
@@ -152,7 +152,7 @@ with sqlite3.connect(Path(sys.argv[1]) / "paperflow.sqlite3") as db:
       );
       expect(deleted.ok()).toBe(true);
     }
-    execFileSync("../.venv/bin/python", [
+    execFileSync(process.env.PAPERFLOW_PYTHON || "python3", [
       "-c",
       `
 import sqlite3, sys

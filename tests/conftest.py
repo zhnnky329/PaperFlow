@@ -25,6 +25,7 @@ def pdf_bytes():
 def config(tmp_path):
     return Config(
         data_dir=tmp_path / "library", marker_executable="/missing/marker", max_upload_mb=1,
+        marker_device="cpu", llama_cpp_gpu_layers=99,
         discovery_online=False,
         deepseek_api_key="",
     )

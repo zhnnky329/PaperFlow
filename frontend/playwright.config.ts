@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 const port = Number(process.env.PAPERFLOW_E2E_PORT || 8873);
 const baseURL = `http://127.0.0.1:${port}`;
+const python = (process.env.PAPERFLOW_PYTHON || "python3").replaceAll("'", "'\"'\"'");
 export default defineConfig({
   testDir: "../tests/e2e",
   fullyParallel: false,
@@ -11,12 +12,14 @@ export default defineConfig({
   use: {
     baseURL,
     viewport: { width: 1280, height: 900 },
-    channel: "chrome",
+    ...(process.env.PAPERFLOW_BROWSER_CHANNEL
+      ? { channel: process.env.PAPERFLOW_BROWSER_CHANNEL }
+      : {}),
     headless: true,
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "../.venv/bin/python ../scripts/run.py serve --no-open",
+    command: `'${python}' ../scripts/run.py serve --no-open`,
     url: `${baseURL}/api/v1/health`,
     reuseExistingServer: false,
     env: {
@@ -24,6 +27,7 @@ export default defineConfig({
       PAPERFLOW_MARKER_EXECUTABLE: "/missing/marker",
       PAPERFLOW_PORT: String(port),
       PAPERFLOW_DISCOVERY_ONLINE: "false",
+      PAPERFLOW_METADATA_ONLINE: "true",
       PAPERFLOW_DEEPSEEK_API_KEY: "",
     },
   },

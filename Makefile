@@ -1,6 +1,6 @@
 export PATH := $(CURDIR)/.tools/bin:$(PATH)
+unexport PYTHONPATH
 PYTHON ?= python3
-VENV = .venv/bin/python
 NPM ?= npm
 NODE ?= node
 
@@ -8,30 +8,31 @@ NODE ?= node
 install: install-backend install-frontend
 install-backend:
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3,11), "Use Python >=3.11 (recommended conda Python 3.12)"'
-	$(PYTHON) -m venv .venv
-	$(VENV) -m pip install -r backend/requirements.lock
+	$(PYTHON) -c 'import sys; from pathlib import Path; assert sys.prefix != sys.base_prefix or (Path(sys.prefix) / "conda-meta").is_dir(), "Activate the paperflow conda environment or a virtualenv first"'
+	$(PYTHON) -m pip install -r backend/requirements.lock
 install-frontend:
+	$(NODE) -e 'if (Number(process.versions.node.split(".")[0]) !== 24) { console.error("Use Node.js 24 in the paperflow environment"); process.exit(1); }'
 	cd frontend && $(NPM) ci
-	$(VENV) scripts/build_reader.py
+	$(PYTHON) scripts/build_reader.py
 doctor:
-	$(VENV) scripts/doctor.py
+	$(PYTHON) scripts/doctor.py
 dev:
-	$(VENV) scripts/run.py dev
+	$(PYTHON) scripts/run.py dev
 serve:
-	$(VENV) scripts/run.py serve
+	$(PYTHON) scripts/run.py serve
 build:
 	cd frontend && $(NPM) run build
-	$(VENV) scripts/build_reader.py
+	$(PYTHON) scripts/build_reader.py
 lint:
-	.venv/bin/ruff check --config backend/pyproject.toml backend scripts tests
+	$(PYTHON) -m ruff check --config backend/pyproject.toml backend scripts tests
 	cd frontend && $(NPM) run lint
 typecheck:
 	cd frontend && $(NPM) run typecheck
 test:
-	$(VENV) -m pytest tests -q
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests -q
 	cd frontend && $(NPM) test
 e2e: build
-	$(VENV) scripts/create_fixture.py
-	cd frontend && $(NPM) run e2e
+	$(PYTHON) scripts/create_fixture.py
+	cd frontend && PAPERFLOW_PYTHON="$(PYTHON)" $(NPM) run e2e
 backup:
-	$(VENV) scripts/backup.py backup
+	$(PYTHON) scripts/backup.py backup

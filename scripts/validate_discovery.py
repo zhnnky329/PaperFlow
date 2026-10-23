@@ -1,7 +1,8 @@
 """Real public-arXiv discovery/storage/API validation, without any AI call.
 
 Run from the repository root:
-    .venv/bin/python scripts/validate_discovery.py
+    conda activate paperflow
+    python scripts/validate_discovery.py
 
 Every run creates and removes its own temporary PaperFlow data directory. The
 two discovered metadata records are real; the generated baseline PDF is only a

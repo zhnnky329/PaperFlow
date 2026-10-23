@@ -16,7 +16,12 @@ if '--help' in sys.argv:
  print('--mode fast --output_format html');sys.exit(0)
 assert 'SURYA_INFERENCE_URL' not in os.environ
 assert 'DEEPSEEK_API_KEY' not in os.environ
+assert not os.environ.get('ALL_PROXY','').startswith('socks://')
 assert os.environ['SURYA_INFERENCE_HOST']=='127.0.0.1'
+assert os.environ['SURYA_INFERENCE_BACKEND']=='llamacpp'
+assert os.environ['SURYA_INFERENCE_PARALLEL']=='1'
+assert os.environ['TORCH_DEVICE'] in ('cpu', 'cuda')
+assert os.environ['LLAMA_CPP_NGL']==('0' if os.environ['TORCH_DEVICE']=='cpu' else '99')
 {"time.sleep(10)" if slow else ""}
 {"sys.exit(3)" if fail else ""}
 out=Path(sys.argv[sys.argv.index('--output_dir')+1]);out.mkdir(parents=True,exist_ok=True)
@@ -36,6 +41,10 @@ def wait_job(client, job_id):
 
 def test_real_subprocess_queue_cache_failure_retry(config, pdf_bytes, tmp_path, monkeypatch):
     monkeypatch.setenv("SURYA_INFERENCE_URL", "https://untrusted-inference.invalid")
+    monkeypatch.setenv("SURYA_INFERENCE_BACKEND", "vllm")
+    monkeypatch.setenv("TORCH_DEVICE", "mps")
+    monkeypatch.setenv("LLAMA_CPP_NGL", "999")
+    monkeypatch.setenv("ALL_PROXY", "socks://127.0.0.1:7890")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "FAKE_KEY_FOR_ENV_BOUNDARY_TEST")
     executable = tmp_path / "fake-marker"
     fake_cli(executable)
@@ -63,6 +72,27 @@ def test_real_subprocess_queue_cache_failure_retry(config, pdf_bytes, tmp_path, 
         retry = client.post("/api/v1/conversions/" + failed["id"] + "/retry").json()["job"]
         assert retry["attempt"] == 2
         assert wait_job(client, retry["id"])["status"] == "succeeded"
+
+
+def test_device_change_invalidates_conversion_cache(config, pdf_bytes, tmp_path):
+    executable = tmp_path / "fake-marker"
+    fake_cli(executable)
+    config.marker_executable = str(executable)
+    app = create_app(config)
+    with TestClient(
+        app, base_url="http://127.0.0.1:8000", headers={"Origin": "http://127.0.0.1:8000", "X-PaperFlow": "1"}
+    ) as client:
+        paper = upload(client, pdf_bytes)
+        endpoint = f"/api/v1/papers/{paper['id']}/conversions"
+        cpu = client.post(endpoint, json={}).json()["job"]
+        assert wait_job(client, cpu["id"])["status"] == "succeeded"
+        config.marker_device = "cuda"
+        result = client.post(endpoint, json={}).json()
+        assert not result["cached"]
+        cuda = result["job"]
+        assert cuda["fingerprint"] != cpu["fingerprint"]
+        assert cuda["settings"]["device"] == "cuda"
+        assert wait_job(client, cuda["id"])["status"] == "succeeded"
 
 
 def test_cancel_and_orphan_recovery(config, pdf_bytes, tmp_path):

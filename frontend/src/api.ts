@@ -2,7 +2,7 @@ export type Label = {
   id: string;
   name: string;
   paper_count?: number;
-  finder_path?: string;
+  folder_path?: string;
   parent_id?: string | null;
   path?: string;
   depth?: number;
@@ -63,6 +63,10 @@ export type Settings = {
   marker_mode: "fast" | "balanced";
   auto_convert_on_import: boolean;
   marker_available: boolean;
+  marker_device: "cpu" | "cuda";
+  marker_backend: "llamacpp";
+  llama_available: boolean;
+  folder_open_available: boolean;
   data_dir: string;
   folders_root: string;
   folder_sync: {

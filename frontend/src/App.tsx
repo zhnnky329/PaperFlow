@@ -218,6 +218,7 @@ export function App({
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(() => {
+    if (discoverPage) return;
     let alive = true;
     const refresh = () =>
       api<DiscoveryStatus>("/discovery/status")
@@ -231,7 +232,7 @@ export function App({
       alive = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [discoverPage]);
   useEffect(() => {
     if (config) document.documentElement.dataset.theme = config.theme;
   }, [config]);
@@ -599,12 +600,17 @@ export function App({
               {settingsPage
                 ? "让工作台适合你的阅读习惯。"
                 : collection && collection !== "unfiled"
-                  ? "按你的分类整理论文，同步到 Finder 文件夹。"
+                  ? "按你的分类整理论文，同步到本地文件夹。"
                   : "整理文献，继续阅读。"}
               {!settingsPage && collection && collection !== "unfiled" && (
                 <Button
                   variant="ghost"
-                  disabled={busy}
+                  disabled={busy || !config?.folder_open_available}
+                  title={
+                    config?.folder_open_available
+                      ? undefined
+                      : "当前没有可用的桌面文件管理器，请复制路径"
+                  }
                   onClick={() =>
                     action(() =>
                       api(`/collections/${collection}/reveal`, {
@@ -613,7 +619,26 @@ export function App({
                     )
                   }
                 >
-                  <Folder size={14} />在 Finder 中打开
+                  <Folder size={14} />在文件管理器中打开
+                </Button>
+              )}
+              {selectedFolder?.folder.folder_path && (
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    action(async () => {
+                      const path = selectedFolder.folder.folder_path!;
+                      try {
+                        await navigator.clipboard.writeText(path);
+                        setNotice(`已复制文件夹路径：${path}`);
+                      } catch {
+                        setNotice(`请手动复制文件夹路径：${path}`);
+                      }
+                    })
+                  }
+                >
+                  复制文件夹路径
                 </Button>
               )}
             </p>
@@ -663,7 +688,7 @@ export function App({
               <>
                 <section className="settings-section">
                   <h2>Appearance</h2>
-                  <p>跟随你的 macOS 偏好，让阅读保持舒适。</p>
+                  <p>跟随系统主题偏好，让阅读保持舒适。</p>
                   <label>
                     主题
                     <select
@@ -741,6 +766,18 @@ export function App({
                         : "未安装 / 路径未配置"}
                     </span>
                   </div>
+                  <div className="setting-line">
+                    推理后端{" "}
+                    <span className="format">
+                      llama.cpp · {config.marker_device.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="setting-line">
+                    llama-server{" "}
+                    <span className="format">
+                      {config.llama_available ? "已检测到" : "未安装 / 路径未配置"}
+                    </span>
+                  </div>
                   <label>
                     模式
                     <select
@@ -757,7 +794,7 @@ export function App({
                         })
                       }
                     >
-                      <option value="fast">Fast · Apple Silicon 默认</option>
+                      <option value="fast">Fast · 较低资源消耗</option>
                       <option value="balanced">Balanced · 更高资源消耗</option>
                     </select>
                   </label>
@@ -781,7 +818,8 @@ export function App({
                   <p>
                     首次转换需下载模型；Marker 2.x 的公式/OCR 还需要
                     llama-server。CLI 路径通过 .env 的
-                    PAPERFLOW_MARKER_EXECUTABLE 配置，重启生效。
+                    PAPERFLOW_MARKER_EXECUTABLE 配置；设备由
+                    PAPERFLOW_MARKER_DEVICE=cpu 或 cuda 指定，重启生效。
                   </p>
                 </section>
                 <section className="settings-section">
@@ -799,15 +837,15 @@ export function App({
                   >
                     Read Frog localhost 设置指南 <ArrowUpRight size={14} />
                   </a>
-                  <p>插件译文由扩展管理。当前兼容性 Gate 待人工验证。</p>
+                  <p>插件译文由扩展管理。</p>
                 </section>
                 <section className="settings-section">
                   <h2>Storage & recovery</h2>
                   <p className="storage-path">{config.data_dir}</p>
-                  <h3>Finder 文件夹</h3>
+                  <h3>本地分类文件夹</h3>
                   <p className="storage-path">{config.folders_root}</p>
                   <p>
-                    应用与这里的一级文件夹双向同步。Finder 中新增 PDF
+                    应用与这里的多层文件夹双向同步。文件管理器中新增 PDF
                     会导入论文库，移动或复制会更新分类，文件夹改名也会同步。
                     删除副本只取消该分类，论文原文和阅读进度保留。
                   </p>
@@ -837,7 +875,7 @@ export function App({
                     action(() => api("/collections/sync", { method: "POST" }))
                   }
                 >
-                  重试 Finder 同步
+                  重试文件夹同步
                 </Button>
               </div>
             )}
@@ -1298,9 +1336,9 @@ export function App({
                 {["queued", "running"].includes(
                   config?.folder_sync?.status || "",
                 )
-                  ? "正在同步 Finder 文件夹…"
+                  ? "正在同步本地文件夹…"
                   : config?.marker_available
-                    ? "Marker 已就绪"
+                    ? "Marker 已检测到"
                     : "Marker 未安装；可继续使用 Library 和 PDF"}
               </span>
             </footer>
@@ -1775,7 +1813,7 @@ export function App({
                   </select>
                 </label>
                 <p className="muted">
-                  同步到 Finder 中对应的目录层级。原始 PDF 保留在论文库中。
+                  同步到本地对应的目录层级。原始 PDF 保留在论文库中。
                 </p>
                 {taxonomy.item && (
                   <Button
@@ -1794,7 +1832,7 @@ export function App({
             {deleteFolder && (
               <p className="error">
                 {taxonomy.kind === "collections"
-                  ? "将删除此文件夹及其中的全部子文件夹分类，并清理未修改的 PDF 副本。论文原文、阅读进度、其他分类和 Finder 中额外文件保留。"
+                  ? "将删除此文件夹及其中的全部子文件夹分类，并清理未修改的 PDF 副本。论文原文、阅读进度、其他分类和本地额外文件保留。"
                   : "删除此标签，论文原文与阅读进度保留。"}
               </p>
             )}
