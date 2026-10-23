@@ -389,7 +389,7 @@ def test_configuration_and_same_device_detection(tmp_path, monkeypatch):
             session.commit()
             assert peer.clock(session) > clock + 100
         with pytest.raises(ValueError):
-            Snapshot.model_validate({"protocol": 2, "device": uid()})
+            Snapshot.model_validate({"protocol": 3, "device": uid()})
 
 
 def test_content_hash_identity_is_checked(tmp_path, monkeypatch, pdf_bytes):

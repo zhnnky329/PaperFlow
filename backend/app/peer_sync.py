@@ -41,6 +41,7 @@ from .db import (
 )
 from .folders import folder_name
 from .html import publish_html
+from .metadata import FIELDS as METADATA_FIELDS
 from .schemas import PaperPatch, ReadingPosition
 from .storage import delete_assets, validate_pdf
 from .worker import job_dict, settings
@@ -116,7 +117,7 @@ class Asset(BaseModel):
 
 class Snapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    protocol: int = Field(1, ge=1, le=1)
+    protocol: int = Field(2, ge=2, le=2)
     device: UUID
     identities: list[Identity] = Field(default_factory=list, max_length=100000)
     records: list[WireRecord] = Field(default_factory=list, max_length=100000)
@@ -336,7 +337,12 @@ class PeerSync:
             prefix = f"paper/{paper.id}/"
             values[prefix + "exists"] = True
             for field in PAPER_FIELDS:
-                values[prefix + field] = getattr(paper, field)
+                if field == "metadata_sources":
+                    continue  # Old aggregate records remain readable, but are never written again.
+                value = getattr(paper, field)
+                if field in METADATA_FIELDS:
+                    value = {"value": value, "source": (paper.metadata_sources or {}).get(field)}
+                values[prefix + field] = value
             if paper.pdf_path and self.config.path(paper.pdf_path).is_file():
                 values[f"pdf/{paper.id}"] = {"digest": paper.pdf_sha256}
             if paper.html_path and self.config.path(paper.html_path).is_file():
@@ -369,7 +375,17 @@ class PeerSync:
         session.flush()
         values = self.values(session)
         baseline = {r.key: r.value for r in session.scalars(select(SyncBaseline))}
-        changed = [key for key in values.keys() | baseline.keys() if values.get(key) != baseline.get(key)]
+        previous = dict(baseline)
+        for key in values.keys() & baseline.keys():
+            parts = key.split("/")
+            if parts[0] == "paper" and parts[2] in METADATA_FIELDS and not isinstance(baseline[key], dict):
+                # Compare a v1 baseline without turning an upgrade into an edit of every field.
+                sources = baseline.get(f"paper/{parts[1]}/metadata_sources") or {}
+                previous[key] = {"value": baseline[key], "source": sources.get(parts[2])}
+        changed = [
+            key for key in values.keys() | previous.keys()
+            if not key.endswith("/metadata_sources") and values.get(key) != previous.get(key)
+        ]
         if changed:
             version = self.clock(session), self.device
             for key in sorted(changed):
@@ -408,7 +424,7 @@ class PeerSync:
                 if path:
                     assets[kind, digest] = {"kind": kind, "digest": digest, "size": path.stat().st_size}
         return {
-            "protocol": 1,
+            "protocol": 2,
             "device": self.device,
             "identities": identities,
             "records": records,
@@ -484,6 +500,15 @@ class PeerSync:
             if field == "exists":
                 if value is not True:
                     raise ValueError("Invalid paper existence")
+            elif field in METADATA_FIELDS and isinstance(value, dict):
+                if set(value) != {"value", "source"}:
+                    raise ValueError("Invalid metadata field")
+                source = value["source"]
+                if source is not None and (not isinstance(source, str) or len(source) > 100):
+                    raise ValueError("Invalid metadata source")
+                if value["value"] is None and field in ("title", "authors", "abstract", "affiliations"):
+                    raise ValueError("Invalid empty metadata field")
+                PaperPatch.model_validate({field: value["value"]})
             elif field in PaperPatch.model_fields:
                 PaperPatch.model_validate({field: value})
             elif field == "arxiv_id":
@@ -589,10 +614,26 @@ class PeerSync:
             paper = session.get(Paper, parts[1])
             if not paper:
                 continue
-            if parts[2] == "exists":
-                if record.value is None:
+            field, value, source = parts[2], record.value, None
+            if field == "metadata_sources":
+                # v1 omitted null fields on first capture. Their manual-clear
+                # protection can therefore exist only in this legacy aggregate.
+                missing = {
+                    name: source for name, source in (value or {}).items()
+                    if name in METADATA_FIELDS and f"paper/{paper.id}/{name}" not in winners
+                }
+                paper.metadata_sources = dict(paper.metadata_sources or {}) | missing
+                continue
+            if field in METADATA_FIELDS:
+                if isinstance(value, dict):
+                    value, source = value["value"], value["source"]
+                else:
+                    legacy = winners.get(f"paper/{paper.id}/metadata_sources")
+                    source = (legacy.value or {}).get(field) if legacy else None
+            if field == "exists":
+                if value is None:
                     deleted_papers.add(paper.id)
-            elif record.value is not None or parts[2] in (
+            elif value is not None or field in (
                 "year",
                 "arxiv_id",
                 "source_url",
@@ -602,7 +643,14 @@ class PeerSync:
                 "venue_kind",
                 "last_read_at",
             ):
-                setattr(paper, parts[2], record.value)
+                setattr(paper, field, value)
+                if field in METADATA_FIELDS:
+                    sources = dict(paper.metadata_sources or {})
+                    if source is None:
+                        sources.pop(field, None)
+                    else:
+                        sources[field] = source
+                    paper.metadata_sources = sources
         for key, record in winners.items():
             kind, *parts = key.split("/")
             if kind == "tag":
@@ -897,8 +945,14 @@ class PeerSync:
                         elif (
                             winner
                             and rank(winner) == (*expected, 1)
+                            and winner.value
+                            and winner.value.get("digest")
                             and paper
+                            and paper.pdf_sha256 == winner.value.get("pdf_sha256") == job.payload["pdf_sha256"]
+                            # materialize_assets points here only after the verified
+                            # archive has been installed; an older HTML may still exist.
                             and paper.html_path
+                            == f"papers/{paper.id}/derivatives/peer/{winner.value['digest']}/article.html"
                             and self.config.path(paper.html_path).is_file()
                         ):
                             job.status, job.progress_stage, job.finished_at = "succeeded", "complete", now()
