@@ -29,7 +29,7 @@ def settings(session):
 
 
 def job_dict(job):
-    return {c.name: getattr(job, c.name) for c in Job.__table__.columns}
+    return {c.name: getattr(job, c.name) for c in Job.__table__.columns} | {"execution_target": "local"}
 
 
 class Worker:
@@ -39,6 +39,8 @@ class Worker:
         self.process = None
         self.lock = threading.RLock()
         self.thread = threading.Thread(target=self.run, daemon=True)
+        self.on_enqueue = None
+        self.on_publish = None
 
     def start(self):
         with self.sessions() as session:
@@ -70,7 +72,7 @@ class Worker:
     def executable(self):
         return shutil.which(self.config.marker_executable)
 
-    def enqueue(self, session, paper, force=False, attempt=1):
+    def enqueue(self, session, paper, force=False, attempt=1, mode=None, job_id=None, sync_generation=None):
         from fastapi import HTTPException
 
         if not paper.pdf_path:
@@ -78,7 +80,7 @@ class Worker:
         executable = self.executable()
         if not executable:
             raise HTTPException(503, "Marker CLI 未安装，请配置 PAPERFLOW_MARKER_EXECUTABLE")
-        config = {"mode": settings(session)["marker_mode"], "output_format": "html"}
+        config = {"mode": mode or settings(session)["marker_mode"], "output_format": "html"}
         # Include actual isolated package metadata without loading models.
         python = Path(executable).parent / "python"
         try:
@@ -117,8 +119,10 @@ class Worker:
                     return cached, True
             if len(list(session.scalars(select(Job).where(Job.status.in_(["queued", "running"]))))) >= 30:
                 raise HTTPException(429, "转换队列已满，请等待当前任务")
-            job = Job(id=uid(), paper_id=paper.id, fingerprint=fingerprint, settings=config, attempt=attempt)
+            job = Job(id=job_id or uid(), paper_id=paper.id, fingerprint=fingerprint, settings=config, attempt=attempt)
             session.add(job)
+            if self.on_enqueue:
+                self.on_enqueue(session, paper, job, sync_generation)
             session.commit()
             return job, False
 
@@ -217,8 +221,11 @@ class Worker:
                 target = self.config.path(relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(clean, target)
-                paper.html_path = relative + "/article.html"
-                job.result_path, job.status, job.progress_stage = paper.html_path, "succeeded", "complete"
+                promote = not self.on_publish or self.on_publish(session, paper, job, target)
+                if promote:
+                    paper.html_path = relative + "/article.html"
+                job.result_path = relative + "/article.html"
+                job.status, job.progress_stage = "succeeded", "complete" if promote else "superseded"
                 job.finished_at = now()
                 session.commit()
         except Exception as exc:

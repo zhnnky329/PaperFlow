@@ -24,6 +24,8 @@
 
 PaperFlow 是一个集成 AI 论文推荐的本地论文管理与阅读工具。通过浏览器使用，论文库和阅读记录保存在自己的电脑上，无需注册账号，主要面向 macOS Apple Silicon。
 
+可选的 [Ubuntu / macOS 双机同步与远程转换](docs/PEER_SYNC.md)：两端各自保存论文库，Mac 运行 Discovery，可选择本机 Marker 或交给 Ubuntu CUDA 转换，并同步阅读进度与完整 HTML。默认关闭，保留现有本机入口。
+
 ## 核心功能
 
 | 功能 | 可以做什么 |
