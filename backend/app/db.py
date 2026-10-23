@@ -3,6 +3,7 @@ import unicodedata
 from datetime import datetime, timezone
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     Float,
     ForeignKey,
@@ -129,6 +130,50 @@ class Setting(Base):
     __tablename__ = "settings"
     key = Column(String, primary_key=True)
     value = Column(JSON, nullable=False)
+
+
+class SyncRecord(Base):
+    __tablename__ = "sync_records"
+    key = Column(String, primary_key=True)
+    value = Column(JSON)
+    clock = Column(Integer, nullable=False)
+    device = Column(String, nullable=False)
+    phase = Column(Integer, nullable=False, default=0)
+
+
+class SyncBaseline(Base):
+    __tablename__ = "sync_baselines"
+    key = Column(String, primary_key=True)
+    value = Column(JSON)
+
+
+class SyncAlias(Base):
+    __tablename__ = "sync_aliases"
+    key = Column(String, primary_key=True)
+    local_id = Column(String, nullable=False)
+
+
+class RemoteConversion(Base):
+    __tablename__ = "remote_conversions"
+    id = Column(String, primary_key=True, default=uid)
+    paper_id = Column(String, ForeignKey("papers.id", ondelete="CASCADE"), nullable=False)
+    payload = Column(JSON, nullable=False)
+    status = Column(String, nullable=False, default="queued")
+    progress_stage = Column(String, nullable=False, default="waiting_connection")
+    error_message = Column(String)
+    attempt = Column(Integer, nullable=False, default=1)
+    cancel_requested = Column(Boolean, nullable=False, default=False)
+    created_at = Column(String, nullable=False, default=now)
+    finished_at = Column(String)
+
+
+class PeerReceipt(Base):
+    __tablename__ = "peer_receipts"
+    id = Column(String, primary_key=True)
+    job_id = Column(String)
+    paper_id = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False)
+    canceled = Column(Boolean, nullable=False, default=False)
 
 
 class DiscoveryPaper(Base):

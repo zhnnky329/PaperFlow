@@ -15,6 +15,8 @@
 
 PaperFlow 是一个通过本机浏览器使用的论文工作台。本分支面向 **Ubuntu 24.04 LTS x86_64**，论文库与阅读记录保存在本地，支持 NVIDIA GPU 加速 PDF 转换。
 
+可选的 [Ubuntu / macOS 双机同步与远程转换](docs/PEER_SYNC.md)：两端各自保存论文库，Mac 运行 Discovery，可选择本机 Marker 或交给 Ubuntu CUDA 转换，并同步阅读进度与完整 HTML。默认关闭，保留现有本机入口。
+
 ## 主要功能
 
 - **发现论文**：按研究方向从 arXiv 获取论文，使用 DeepSeek 生成中文总结与推荐理由。

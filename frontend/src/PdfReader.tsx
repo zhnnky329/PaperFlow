@@ -127,6 +127,9 @@ export function PdfReader() {
   const { id } = useParams();
   const [paper, setPaper] = useState<Paper | null>(null),
     [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const [remoteAvailable, setRemoteAvailable] = useState(false);
+  const revision = useRef<string | undefined>(undefined);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [page, setPage] = useState(1),
     [scale, setScale] = useState(1),
     [error, setError] = useState(""),
@@ -137,15 +140,20 @@ export function PdfReader() {
     scaleRef = useRef(1),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const save = useCallback(() => {
-    if (restored.current)
-      api(`/papers/${id}/reading-position?mode=pdf`, {
+    if (restored.current) {
+      const position = { pdf_page: pageRef.current, pdf_scale: scaleRef.current };
+      saveQueue.current = saveQueue.current.then(async () => {
+        const saved = await api<Position>(`/papers/${id}/reading-position?mode=pdf`, {
         method: "PUT",
         keepalive: true,
         body: JSON.stringify({
-          pdf_page: pageRef.current,
-          pdf_scale: scaleRef.current,
+          ...position,
+          revision: revision.current,
         }),
-      }).catch(() => setError("进度保存失败，请检查后端连接。"));
+        });
+        revision.current = saved.revision;
+      }).catch((error: Error) => setError(error.message));
+    }
   }, [id]);
   const onVisible = useCallback(
     (next: number) => {
@@ -190,6 +198,7 @@ export function PdfReader() {
     api<Settings>("/settings")
       .then((value) => {
         document.documentElement.dataset.theme = value.theme;
+        setRemoteAvailable(value.remote_conversion_available);
       })
       .catch(() => {});
   }, []);
@@ -214,6 +223,7 @@ export function PdfReader() {
       .then(([pdf, position]) => {
         if (canceled) return;
         setDoc(pdf);
+        revision.current = position.revision;
         const target = Math.min(position.pdf_page, pdf.numPages);
         setPage(target);
         pageRef.current = target;
@@ -255,11 +265,11 @@ export function PdfReader() {
     scaleRef.current = value;
     save();
   }
-  async function act(action: string) {
+  async function act(action: string, target: "local" | "ubuntu" = "local") {
     setBusy(true);
     setError("");
     try {
-      await api(`/papers/${id}/${action}`, { method: "POST", body: "{}" });
+      await api(`/papers/${id}/${action}`, { method: "POST", body: JSON.stringify({ target }) });
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -308,6 +318,10 @@ export function PdfReader() {
           >
             Convert HTML
           </Button>
+        )}
+        {paper?.has_pdf && remoteAvailable && (
+          <Button disabled={busy || ["queued", "running"].includes(paper.conversion?.status || "")}
+            onClick={() => act("conversions", "ubuntu")}>使用 Ubuntu 转换</Button>
         )}
         {doc && (
           <div className="reader-controls" aria-label="PDF 阅读控制">

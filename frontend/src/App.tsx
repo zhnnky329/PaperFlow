@@ -30,6 +30,7 @@ import { Button } from "./components/ui/button";
 import { Modal } from "./components/Modal";
 import { Discover } from "./Discover";
 import { DiscoverySettings } from "./DiscoverySettings";
+import { PeerSettings } from "./PeerSettings";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
@@ -859,6 +860,7 @@ export function App({
                   </p>
                 </section>
                 <DiscoverySettings />
+                <PeerSettings />
               </>
             ) : (
               <p>正在加载设置…</p>
@@ -1299,6 +1301,16 @@ export function App({
                             >
                               {p.has_html ? "重建 HTML" : "Convert"}
                             </Button>
+                          )}
+                        {p.has_pdf && config?.remote_conversion_available &&
+                          !["queued", "running"].includes(p.conversion?.status || "") && (
+                            <Button variant="ghost" disabled={busy} onClick={() =>
+                              action(() => api(`/papers/${p.id}/conversions`, {
+                                method: "POST", body: JSON.stringify({
+                                  target: "ubuntu", force_rebuild: p.has_html,
+                                }),
+                              }))
+                            }>使用 Ubuntu 转换</Button>
                           )}
                       </div>
                     </div>
