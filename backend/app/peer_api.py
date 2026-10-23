@@ -73,7 +73,7 @@ def register_peer(app, peer):
                 if not peer.asset_path(session, asset.kind, asset.digest)
             ]
             result = peer.snapshot(session)
-            session.commit()
+            peer.commit(session)
         peer.online, peer.error, peer.last_success = True, None, now()
         peer.folders.request()
         return {"snapshot": result, "needed": needed}
@@ -105,6 +105,7 @@ def register_peer(app, peer):
 
             def install():
                 with peer.worker.lock, peer.lock, sessions() as session:
+                    peer.capture(session)
                     peer.materialize_assets(session)
                     peer.baseline(session, peer.values(session))
                     session.commit()

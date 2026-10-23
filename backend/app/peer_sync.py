@@ -42,7 +42,7 @@ from .db import (
 from .folders import folder_name
 from .html import publish_html
 from .schemas import PaperPatch, ReadingPosition
-from .storage import validate_pdf
+from .storage import delete_assets, validate_pdf
 from .worker import job_dict, settings
 
 PAPER_FIELDS = (
@@ -547,6 +547,13 @@ class PeerSync:
         self.materialize(session)
         self.baseline(session, self.values(session))
 
+    def commit(self, session):
+        session.commit()
+        # A rolled-back exchange must never remove the original files.
+        for paper_id in session.info.pop("peer_deleted_assets", set()):
+            if not session.get(Paper, paper_id):
+                delete_assets(self.config, paper_id)
+
     def materialize(self, session):
         winners = self.winners(session)
         # Validate the entire proposed tree before mutating filesystem state.
@@ -646,6 +653,7 @@ class PeerSync:
                     ):
                         self.worker.kill(self.worker.process)
                 session.delete(paper)
+        session.info.setdefault("peer_deleted_assets", set()).update(deleted_papers)
         session.flush()
         self.materialize_assets(session)
 
@@ -894,7 +902,7 @@ class PeerSync:
                             and self.config.path(paper.html_path).is_file()
                         ):
                             job.status, job.progress_stage, job.finished_at = "succeeded", "complete", now()
-                    session.commit()
+                    self.commit(session)
                 for asset in response["needed"]:
                     if self.stop_event.is_set():
                         return
@@ -919,7 +927,7 @@ class PeerSync:
                 self.download_assets(client, incoming.assets)
                 with self.worker.lock, self.lock, self.sessions() as session:
                     self.merge(session, incoming)
-                    session.commit()
+                    self.commit(session)
                 self.folders.request()
                 self.online, self.error, self.last_success = True, None, now()
         finally:

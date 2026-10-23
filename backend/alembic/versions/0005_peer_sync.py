@@ -10,6 +10,9 @@ depends_on = None
 
 
 def upgrade():
+    connection = op.get_bind()
+    if not connection.connection.driver_connection.in_transaction:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
     op.create_table(
         "sync_records",
         sa.Column("key", sa.String(), primary_key=True),

@@ -9,12 +9,15 @@ from contextlib import contextmanager
 
 import httpx
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
+from alembic.operations import Operations
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import create_engine, select, text
 
-from app.config import Config
+from app.config import Config, ROOT
 from app.db import Job, Paper, PeerReceipt, RemoteConversion, Setting, SyncRecord, uid
 from app.main import create_app
 from app.peer_sync import ConversionRequest, PeerSync, Snapshot
@@ -134,6 +137,7 @@ def test_bidirectional_library_fields_edges_and_deletion(
         peer.once()
         peer.once()
         assert papers(mac) == papers(ubuntu) == []
+        assert not peer.config.path(f"papers/{paper['id']}").exists()
         assert peer.device != other.device
 
 
@@ -485,3 +489,50 @@ def test_concurrent_same_field_converges_without_clock_ping_pong(
         peer.once()
         with peer.sessions() as session:
             assert max(session.scalars(select(SyncRecord.clock))) == before
+
+
+def test_edit_during_asset_upload_is_not_absorbed_into_baseline(tmp_path, monkeypatch, pdf_bytes):
+    with devices(tmp_path, monkeypatch) as (mac, ubuntu, peer, other):
+        paper = upload(mac, pdf_bytes)
+        original = peer.transport
+
+        def edit_while_uploading(request):
+            if request.method == "PUT" and "/assets/pdf/" in request.url.path:
+                patch(ubuntu, paper["id"], title="Edited during PDF transfer")
+            return original.handle_request(request)
+
+        peer.transport = httpx.MockTransport(edit_while_uploading)
+        peer.once()
+        assert papers(mac)[0]["title"] == "Edited during PDF transfer"
+        peer.once()
+        assert papers(ubuntu)[0]["title"] == "Edited during PDF transfer"
+
+
+def test_interrupted_sync_migration_rolls_back_and_can_restart(tmp_path, monkeypatch):
+    config = Config(data_dir=tmp_path / "migration", discovery_online=False)
+    config.data_dir.mkdir()
+    engine = create_engine("sqlite:///" + str(config.data_dir / "paperflow.sqlite3"))
+    migration = AlembicConfig(str(ROOT / "backend/alembic.ini"))
+    migration.set_main_option("script_location", str(ROOT / "backend/alembic"))
+    with engine.begin() as connection:
+        migration.attributes["connection"] = connection
+        command.upgrade(migration, "0004")
+    original = Operations.create_table
+
+    def interrupt(operation, name, *args, **kwargs):
+        if name == "sync_aliases":
+            raise RuntimeError("Injected peer migration interruption")
+        return original(operation, name, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Operations, "create_table", interrupt)
+        with pytest.raises(RuntimeError, match="Injected peer"):
+            create_app(config)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0004"
+        assert connection.execute(text("SELECT name FROM sqlite_master WHERE name LIKE 'sync_%'")).all() == []
+    restarted = create_app(config)
+    with restarted.state.sessions() as session:
+        assert session.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0005"
+    restarted.state.sessions.kw["bind"].dispose()
+    engine.dispose()
