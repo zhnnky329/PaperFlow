@@ -201,12 +201,11 @@ export function conversionLabel(job: Job) {
   if (job.progress_stage === "superseded") return prefix + "转换完成，保留更新的 HTML";
   if (job.status === "running") {
     return (
-      prefix +
-      {
+      prefix + ({
         preparing: "准备转换…",
         converting: "正在生成 HTML…",
         publishing: "正在保存 HTML…",
-      }[job.progress_stage] || "正在转换…"
+      }[job.progress_stage] || "正在转换…")
     );
   }
   return prefix + {
