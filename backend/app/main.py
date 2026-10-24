@@ -785,7 +785,8 @@ def create_app(config=None):
                 counts[collection_id] = counts.get(collection_id, 0) + 1
             result = [
                 collection_info(row, rows)
-                | {"paper_count": counts.get(row.id, 0), "finder_path": str(folder_sync.directory(row))}
+                | {"paper_count": counts.get(row.id, 0),
+                   "finder_path": str(config.data_dir / "folders" / collection_path(row, rows))}
                 for row in rows.values()
             ]
             return sorted(result, key=lambda row: (row["path"].casefold(), row["id"]))

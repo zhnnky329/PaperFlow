@@ -35,6 +35,30 @@ def create_folder(client, name, parent=None):
     return response.json()
 
 
+def test_listing_uses_one_tree_snapshot_during_concurrent_delete(tree_client):
+    parent = create_folder(tree_client, "Parent")
+    create_folder(tree_client, "Child", parent["id"])
+    engine = tree_client.app.state.sessions.kw["bind"]
+    deleted = False
+
+    def remove_after_tree_read(connection, cursor, statement, parameters, context, executemany):
+        nonlocal deleted
+        if not deleted and statement.startswith("SELECT collections."):
+            deleted = True
+            with engine.begin() as other:
+                other.execute(text("DELETE FROM collections WHERE id=:id"), {"id": parent["id"]})
+
+    event.listen(engine, "after_cursor_execute", remove_after_tree_read)
+    try:
+        response = tree_client.get("/api/v1/collections")
+        assert deleted
+        assert response.status_code == 200, response.text
+        assert {row["path"] for row in response.json()} == {"Parent", "Parent/Child"}
+        assert tree_client.get("/api/v1/collections").json() == []
+    finally:
+        event.remove(engine, "after_cursor_execute", remove_after_tree_read)
+
+
 def insert_paper(client, config, pdf_bytes):
     paper_id = uid()
     relative = f"papers/{paper_id}/original.pdf"
