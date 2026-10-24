@@ -33,6 +33,7 @@ PaperFlow 是一个集成 AI 论文推荐的本地论文管理与阅读工具。
 | **📂 文件夹与 Finder 同步** | 自定义多层分类，一篇论文可放入多个文件夹；分类对应 Finder 中的真实目录，支持双向整理。 |
 | **📖 PDF 与 HTML 阅读** | 保留 PDF 原始排版，打开 arXiv 官方 HTML，或通过 Marker 将本地 PDF 转成 HTML，配合 Read Frog 等浏览器翻译插件阅读。 |
 | **🔖 阅读进度保存** | 记住 PDF 页码、缩放和本地 HTML 阅读位置，下次打开接着读。 |
+| **🔄 双机同步与远程转换** | 同步 Mac / Ubuntu 的论文、分类和阅读进度；保留本机 Marker，也可交给 Ubuntu CUDA 转换。 |
 | **🔎 搜索与阅读状态** | 按标题、作者、arXiv ID 和标签搜索，标记未读 / 阅读中 / 已读，支持浅色与深色主题。 |
 | **💻 本地存储与备份** | 论文、分类和阅读记录保存在本机，支持备份恢复；已有 PDF 和本地 HTML 可离线阅读。 |
 
@@ -116,6 +117,15 @@ arXiv 导入初始只保存条目和链接。需要离线阅读时，打开 **PD
 本地 HTML 通过论文的 **Convert** 按钮生成，转换期间可以继续阅读 PDF。HTML 页面可配合 Read Frog 等浏览器翻译插件使用，插件需要自行安装和配置。
 
 ## 可选配置
+
+<details>
+<summary><strong>双机同步与远程转换</strong></summary>
+
+两端各自保存论文库，通过 Tailscale 跨网络同步 PDF、HTML 和阅读记录。Mac 可运行 Discovery，转换时选择本机 Marker 或 **使用 Ubuntu 转换**。
+
+同步默认关闭，配对后可在 **Settings → 双机同步** 查看状态。配置步骤见 [双机同步与远程转换](docs/PEER_SYNC.md)。
+
+</details>
 
 <details>
 <summary><strong>Marker：将本地 PDF 转成 HTML</strong></summary>

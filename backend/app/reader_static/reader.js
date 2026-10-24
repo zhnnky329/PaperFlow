@@ -36,16 +36,21 @@
   }
   let restored = false;
   let timer;
+  let revision;
+  let saveQueue = Promise.resolve();
   try {
     const response = await fetch(endpoint);
+    if (!response.ok) throw new Error('无法读取阅读位置');
     const position = await response.json();
+    revision = position.revision;
     await Promise.all([...document.images].map(image => image.decode().catch(() => {})));
     if (!location.hash) {
       const anchor = document.getElementById(position.html_anchor);
       if (position.scroll_ratio > 0) scrollTo(0, position.scroll_ratio * Math.max(0, document.documentElement.scrollHeight - innerHeight));
       else if (anchor) anchor.scrollIntoView();
     }
-  } finally { restored = true; }
+    restored = true;
+  } catch { /* Leave progress writes disabled until a successful restore. */ }
   const save = () => {
     if (!restored) return;
     let anchor = '';
@@ -53,8 +58,24 @@
       if (node.getBoundingClientRect().top <= 120) anchor = node.id;
     }
     const ratio = Math.min(1, Math.max(0, scrollY / Math.max(1, root.scrollHeight - innerHeight)));
-    fetch(endpoint, {method:'PUT', keepalive:true, headers:{'Content-Type':'application/json','X-PaperFlow':'1'},
-      body:JSON.stringify({html_anchor:anchor,scroll_ratio:ratio})}).catch(() => {});
+    saveQueue = saveQueue.then(async () => {
+      if (!restored) return;
+      const response = await fetch(endpoint, {method:'PUT', keepalive:true,
+        headers:{'Content-Type':'application/json','X-PaperFlow':'1'},
+        body:JSON.stringify({html_anchor:anchor,scroll_ratio:ratio,revision})});
+      if (!response.ok) {
+        if (response.status === 409) restored = false;
+        throw new Error('阅读位置保存失败；另一设备可能已更新位置，请刷新后继续。');
+      }
+      revision = (await response.json()).revision;
+    }).catch(error => {
+      let status = document.getElementById('progress-status');
+      if (!status) {
+        status = document.createElement('p'); status.id = 'progress-status';
+        status.setAttribute('role', 'alert'); document.querySelector('main').prepend(status);
+      }
+      status.textContent = error.message;
+    });
   };
   addEventListener('scroll', () => {
     let current = '';

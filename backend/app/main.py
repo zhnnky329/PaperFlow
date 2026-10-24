@@ -27,6 +27,7 @@ from .db import (
     Job,
     Position,
     Setting,
+    RemoteConversion,
     paper_tags,
     paper_collections,
     now,
@@ -51,6 +52,8 @@ from .folders import FolderSync, FolderConflict, folder_name
 from .collection_tree import collection_descendants, collection_info, collection_path, CollectionTreeError
 from .discovery import DiscoveryWorker
 from .discovery_api import register_discovery
+from .peer_sync import PeerSync, remote_dict
+from .peer_api import register_peer, peer_authorized, rejected_peer
 
 
 def create_app(config=None):
@@ -60,6 +63,7 @@ def create_app(config=None):
     import_lock = threading.RLock()
     folder_sync = FolderSync(config, sessions, import_lock)
     discovery = DiscoveryWorker(config, sessions)
+    peer = PeerSync(config, sessions, worker, folder_sync, import_lock)
     metadata_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="metadata")
     metadata_pending = set()
     metadata_lock = threading.Lock()
@@ -129,9 +133,11 @@ def create_app(config=None):
         worker.start()
         folder_sync.start()
         discovery.start()
+        peer.start()
         try:
             yield
         finally:
+            peer.stop()
             discovery.stop()
             folder_sync.stop()
             metadata_pool.shutdown(wait=True, cancel_futures=True)
@@ -146,9 +152,14 @@ def create_app(config=None):
     app.state.sessions, app.state.worker, app.state.config = sessions, worker, config
     app.state.folder_sync = folder_sync
     app.state.discovery = discovery
+    app.state.peer = peer
+    register_peer(app, peer)
 
     @app.middleware("http")
     async def security(request: Request, call_next):
+        is_peer = request.url.path.startswith("/peer/")
+        if is_peer and not peer_authorized(config, request):
+            return rejected_peer()
         allowed_hosts = {
             f"127.0.0.1:{config.port}",
             f"localhost:{config.port}",
@@ -156,11 +167,11 @@ def create_app(config=None):
             "localhost:5173",
         }
         host = request.headers.get("host", "")
-        if host not in allowed_hosts:
+        if not is_peer and host not in allowed_hosts:
             return JSONResponse(
                 {"error": {"code": "HOST_REJECTED", "message": "仅允许本地 PaperFlow 地址"}}, 403
             )
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
+        if not is_peer and request.method not in ("GET", "HEAD", "OPTIONS"):
             origins = {"http://" + h for h in allowed_hosts}
             if request.headers.get("origin") not in origins or request.headers.get("x-paperflow") != "1":
                 return JSONResponse({"error": {"code": "CSRF_REJECTED", "message": "请求来源不受信任"}}, 403)
@@ -275,7 +286,10 @@ def create_app(config=None):
         result["collections"] = taxonomy(session, paper, Collection, paper_collections)
         result["publication_sources"] = metadata.publication_sources(paper)
         latest = session.scalar(select(Job).where(Job.paper_id == paper.id).order_by(Job.created_at.desc()))
-        result["conversion"] = job_dict(latest) if latest else None
+        remote = session.scalar(select(RemoteConversion).where(
+            RemoteConversion.paper_id == paper.id).order_by(RemoteConversion.created_at.desc()))
+        result["conversion"] = (remote_dict(remote) if remote and (
+            not latest or remote.created_at > latest.created_at) else job_dict(latest) if latest else None)
         return result
 
     @app.get("/api/v1/health")
@@ -500,6 +514,9 @@ def create_app(config=None):
             )
             if active:
                 raise HTTPException(409, "请先取消转换任务再删除")
+            if session.scalar(select(RemoteConversion).where(
+                    RemoteConversion.paper_id == paper.id, RemoteConversion.status.in_(["queued", "running"]))):
+                raise HTTPException(409, "请先取消 Ubuntu 转换任务再删除")
             delete_assets(config, paper.id)
             session.delete(paper)
             session.commit()
@@ -597,13 +614,20 @@ def create_app(config=None):
 
     @app.post("/api/v1/papers/{paper_id}/conversions", status_code=202)
     def convert(paper_id: UUID, body: ConvertInput):
-        with sessions() as session:
-            job, cached = worker.enqueue(session, paper_or_404(session, paper_id), body.force_rebuild)
+        with worker.lock, import_lock, sessions() as session:
+            paper = paper_or_404(session, paper_id)
+            if body.target == "ubuntu":
+                job, cached = peer.enqueue_remote(session, paper, body.force_rebuild)
+                return {"job": remote_dict(job), "cached": cached}
+            job, cached = worker.enqueue(session, paper, body.force_rebuild)
             return {"job": job_dict(job), "cached": cached}
 
     @app.get("/api/v1/conversions/{job_id}")
     def job_status(job_id: UUID):
         with sessions() as session:
+            remote = session.get(RemoteConversion, str(job_id))
+            if remote:
+                return remote_dict(remote)
             job = session.get(Job, str(job_id))
             if not job:
                 raise HTTPException(404, "任务不存在")
@@ -611,7 +635,21 @@ def create_app(config=None):
 
     @app.post("/api/v1/conversions/{job_id}/{action}")
     def job_action(job_id: UUID, action: Literal["retry", "cancel"]):
-        with sessions() as session:
+        with worker.lock, import_lock, sessions() as session:
+            remote = session.get(RemoteConversion, str(job_id))
+            if remote:
+                if action == "cancel":
+                    if remote.status in ("queued", "running"):
+                        remote.cancel_requested = True
+                        remote.progress_stage = "cancel_pending"
+                        session.commit()
+                        peer.wake.set()
+                    return {"job": remote_dict(remote)}
+                if remote.status not in ("failed", "canceled"):
+                    raise HTTPException(409, "只能重试失败或已取消任务")
+                new_job, cached = peer.enqueue_remote(
+                    session, paper_or_404(session, remote.paper_id), force=True, attempt=remote.attempt + 1)
+                return {"job": remote_dict(new_job), "cached": cached}
             job = session.get(Job, str(job_id))
             if not job:
                 raise HTTPException(404, "任务不存在")
@@ -631,22 +669,26 @@ def create_app(config=None):
             paper_or_404(session, paper_id)
             row = session.get(Position, (str(paper_id), mode))
             return ReadingPosition(
-                **({c.name: getattr(row, c.name) for c in Position.__table__.columns} if row else {})
+                **({c.name: getattr(row, c.name) for c in Position.__table__.columns} if row else {}),
+                revision=row.updated_at if row else "",
             )
 
     @app.put("/api/v1/papers/{paper_id}/reading-position")
     def save_position(paper_id: UUID, mode: Literal["pdf", "local_html"], body: ReadingPosition):
-        with sessions() as session:
+        with import_lock, sessions() as session:
             paper = paper_or_404(session, paper_id)
-            row = session.get(Position, (paper.id, mode)) or Position(paper_id=paper.id, mode=mode)
-            for key, value in body.model_dump().items():
+            row = session.get(Position, (paper.id, mode))
+            if body.revision is not None and body.revision != (row.updated_at if row else ""):
+                raise HTTPException(409, "另一设备已更新阅读位置，请重新打开论文后继续保存；各设备位置仍保留。")
+            row = row or Position(paper_id=paper.id, mode=mode)
+            for key, value in body.model_dump(exclude={"revision"}).items():
                 setattr(row, key, value)
             row.updated_at = paper.last_read_at = now()
             if paper.read_status == "unread":
                 paper.read_status = "reading"
             session.add(row)
             session.commit()
-            return body
+            return body.model_copy(update={"revision": row.updated_at})
 
     def register_taxonomy(kind, model):
         def listing():
@@ -743,7 +785,8 @@ def create_app(config=None):
                 counts[collection_id] = counts.get(collection_id, 0) + 1
             result = [
                 collection_info(row, rows)
-                | {"paper_count": counts.get(row.id, 0), "finder_path": str(folder_sync.directory(row))}
+                | {"paper_count": counts.get(row.id, 0),
+                   "finder_path": str(config.data_dir / "folders" / collection_path(row, rows))}
                 for row in rows.values()
             ]
             return sorted(result, key=lambda row: (row["path"].casefold(), row["id"]))
@@ -861,6 +904,8 @@ def create_app(config=None):
         with sessions() as session:
             return settings(session) | {
                 "marker_available": bool(worker.executable()),
+                "sync_enabled": config.sync_enabled,
+                "remote_conversion_available": config.sync_enabled and bool(config.sync_peer_url),
                 "data_dir": str(config.data_dir),
                 "folders_root": str(config.data_dir / "folders"),
                 "folder_sync": (

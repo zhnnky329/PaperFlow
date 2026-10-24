@@ -13,6 +13,8 @@ export type Job = {
   progress_stage: string;
   error_message: string | null;
   attempt: number;
+  execution_target?: "local" | "ubuntu";
+  cancel_requested?: boolean;
 };
 export type Paper = {
   id: string;
@@ -57,6 +59,8 @@ export type MetadataCandidate = {
   affiliations: Paper["affiliations"];
 };
 export type Settings = {
+  sync_enabled: boolean;
+  remote_conversion_available: boolean;
   theme: "system" | "light" | "dark";
   font_scale: number;
   reader_width: number;
@@ -71,6 +75,7 @@ export type Settings = {
   };
 };
 export type Position = {
+  revision?: string;
   pdf_page: number;
   pdf_scale: number;
   html_anchor: string;
@@ -184,16 +189,22 @@ export function statusLabel(status: Paper["read_status"]) {
   return { unread: "未读", reading: "阅读中", finished: "已读" }[status];
 }
 export function conversionLabel(job: Job) {
+  const prefix = job.execution_target === "ubuntu" ? "Ubuntu · " : "";
+  if (job.cancel_requested && ["queued", "running"].includes(job.status))
+    return prefix + "等待确认取消…";
+  if (job.progress_stage === "waiting_connection") return prefix + "等待设备连接…";
+  if (job.progress_stage === "downloading") return prefix + "正在下载 HTML…";
+  if (job.progress_stage === "superseded") return prefix + "转换完成，保留更新的 HTML";
   if (job.status === "running") {
     return (
-      {
+      prefix + ({
         preparing: "准备转换…",
         converting: "正在生成 HTML…",
         publishing: "正在保存 HTML…",
-      }[job.progress_stage] || "正在转换…"
+      }[job.progress_stage] || "正在转换…")
     );
   }
-  return {
+  return prefix + {
     queued: "等待转换",
     succeeded: "HTML 已生成",
     failed: "转换失败",
