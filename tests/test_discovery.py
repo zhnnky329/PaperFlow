@@ -473,7 +473,7 @@ def test_new_migration_preserves_existing_library_positions_and_links(config):
         )
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            == "0004"
+            == "0005"
         )
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
     engine.dispose()
@@ -535,7 +535,7 @@ def test_interrupted_migration_rolls_back_new_tables_and_can_retry(config, monke
     with restarted.state.sessions() as session:
         assert (
             session.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            == "0004"
+            == "0005"
         )
     restarted.state.sessions.kw["bind"].dispose()
     engine.dispose()

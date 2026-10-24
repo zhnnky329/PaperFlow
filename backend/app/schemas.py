@@ -74,6 +74,7 @@ class CollectionPatch(BaseModel):
 
 
 class ReadingPosition(BaseModel):
+    revision: str | None = Field(None, max_length=100)
     pdf_page: int = Field(1, ge=1, le=100000)
     pdf_scale: float = Field(1, ge=0.25, le=4)
     html_anchor: str = Field("", max_length=200, pattern=r"^[\w-]*$")
@@ -91,3 +92,4 @@ class SettingsPatch(BaseModel):
 
 class ConvertInput(BaseModel):
     force_rebuild: bool = False
+    target: Literal["local", "ubuntu"] = "local"

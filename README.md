@@ -21,6 +21,7 @@ PaperFlow 是一个通过本机浏览器使用的论文工作台。本分支面�
 - **管理文献**：导入 PDF 或 arXiv 链接，搜索、分类、标记阅读状态。
 - **同步文件夹**：多层分类对应本地真实目录，支持文件管理器双向整理。
 - **阅读与翻译**：阅读 PDF、arXiv 官方 HTML 或 Marker 转换的本地 HTML；PDF 和本地 HTML 支持保存阅读进度，可搭配 Read Frog 翻译。
+- **双机同步**：在 Ubuntu 与 macOS 之间同步论文、分类和阅读进度，支持交给 Ubuntu CUDA 转换。
 
 ## 界面预览
 
@@ -97,6 +98,12 @@ python -m venv .marker-venv
 安装 Ubuntu x64 CPU 版 `llama-server`，填写上面的两个路径，并将 `PAPERFLOW_MARKER_DEVICE` 设为 `cpu`。
 
 配置后运行 `make doctor` 检查环境，再重启服务。在 **Settings → Conversion** 选择 Fast 或 Balanced 模式，通过论文的 **Convert** 按钮转换。首次使用会下载模型，之后复用本地缓存；本分支使用原生 llama.cpp，无需 Docker。
+
+## 可选：双机同步
+
+两端各自保存论文库，通过 Tailscale 跨网络同步 PDF、HTML 和阅读记录。Mac 可运行 Discovery，转换时选择本机 Marker 或 **使用 Ubuntu 转换**。
+
+同步默认关闭，配对后可在 **Settings → 双机同步** 查看状态。配置步骤见 [双机同步与远程转换](docs/PEER_SYNC.md)。
 
 ## 数据与备份
 
