@@ -13,6 +13,7 @@ import shutil
 import threading
 import zipfile
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx
@@ -383,7 +384,8 @@ class PeerSync:
                 sources = baseline.get(f"paper/{parts[1]}/metadata_sources") or {}
                 previous[key] = {"value": baseline[key], "source": sources.get(parts[2])}
         changed = [
-            key for key in values.keys() | previous.keys()
+            key
+            for key in values.keys() | previous.keys()
             if not key.endswith("/metadata_sources") and values.get(key) != previous.get(key)
         ]
         if changed:
@@ -531,7 +533,10 @@ class PeerSync:
         elif kind in ("tag", "collection"):
             if not isinstance(value, dict) or set(value) - {"name", "parent_id"}:
                 raise ValueError("Invalid taxonomy")
-            folder_name(value["name"])
+            if kind == "collection":
+                folder_name(value["name"])
+            elif not isinstance(value["name"], str) or not 1 <= len(value["name"].strip()) <= 80:
+                raise ValueError("Invalid tag name")
             if value.get("parent_id"):
                 UUID(value["parent_id"])
         elif kind == "position":
@@ -579,32 +584,64 @@ class PeerSync:
             if not session.get(Paper, paper_id):
                 delete_assets(self.config, paper_id)
 
-    def materialize(self, session):
-        winners = self.winners(session)
-        # Validate the entire proposed tree before mutating filesystem state.
-        collections = {r.id: r for r in session.scalars(select(Collection))}
-        deleted_collections = set()
+    def apply_taxonomy(self, session, winners, kind, model):
+        rows = {row.id: row for row in session.scalars(select(model))}
+        proposed = {
+            key: SimpleNamespace(
+                id=key, name=row.name, parent_id=row.parent_id if model == Collection else None
+            )
+            for key, row in rows.items()
+        }
+        deleted = set()
         for key, record in winners.items():
             parts = key.split("/")
-            if parts[0] == "collection" and parts[1] in collections:
-                row = collections[parts[1]]
+            if parts[0] == kind and parts[1] in proposed:
+                row = proposed[parts[1]]
                 if record.value is None:
-                    deleted_collections.add(row.id)
+                    deleted.add(row.id)
                 else:
                     row.name = record.value["name"]
                     parent = record.value.get("parent_id")
                     row.parent_id = self.local_id(session, "collection", parent) if parent else None
-        live = {k: v for k, v in collections.items() if k not in deleted_collections}
-        with session.no_autoflush:
-            names = set()
-            for row in live.values():
-                if row.parent_id in deleted_collections:
-                    row.parent_id = None
+        live = {key: row for key, row in proposed.items() if key not in deleted}
+        names = set()
+        for row in live.values():
+            if row.parent_id in deleted:
+                row.parent_id = None
+            if model == Collection:
                 collection_path(row, live)
-                name = row.parent_id, row.name.casefold()
-                if name in names:
-                    raise HTTPException(409, "两端文件夹改名冲突，请修改同名文件夹后重试同步")
-                names.add(name)
+            name = row.parent_id, row.name.casefold()
+            if name in names:
+                raise HTTPException(409, "两端分类改名冲突，请修改同名分类后重试同步")
+            names.add(name)
+        changed = {
+            key
+            for key, row in rows.items()
+            if key in deleted
+            or (row.name, row.parent_id if model == Collection else None)
+            != (proposed[key].name, proposed[key].parent_id)
+        }
+        # Free all affected unique names before applying a valid swap or reuse
+        # of a deleted name. The transaction hides these temporary names.
+        for key in changed:
+            rows[key].name = "peer-sync-" + uid()
+            if model == Collection:
+                rows[key].parent_id = None
+        session.flush()
+        for key in changed - deleted:
+            rows[key].name = proposed[key].name
+            if model == Collection:
+                rows[key].parent_id = proposed[key].parent_id
+        session.flush()
+        return deleted
+
+    def materialize(self, session):
+        winners = self.winners(session)
+        deleted_collections = self.apply_taxonomy(session, winners, "collection", Collection)
+        deleted_tags = self.apply_taxonomy(session, winners, "tag", Tag)
+        for identifier in deleted_tags:
+            session.delete(session.get(Tag, identifier))
+        session.flush()
         # Flush independent paper fields after taxonomy validation.
         deleted_papers = set()
         for key, record in winners.items():
@@ -619,7 +656,8 @@ class PeerSync:
                 # v1 omitted null fields on first capture. Their manual-clear
                 # protection can therefore exist only in this legacy aggregate.
                 missing = {
-                    name: source for name, source in (value or {}).items()
+                    name: source
+                    for name, source in (value or {}).items()
                     if name in METADATA_FIELDS and f"paper/{paper.id}/{name}" not in winners
                 }
                 paper.metadata_sources = dict(paper.metadata_sources or {}) | missing
@@ -653,12 +691,6 @@ class PeerSync:
                     paper.metadata_sources = sources
         for key, record in winners.items():
             kind, *parts = key.split("/")
-            if kind == "tag":
-                row = session.get(Tag, parts[0])
-                if row and record.value is None:
-                    session.delete(row)
-                elif row:
-                    row.name = record.value["name"]
             if kind in ("tags", "collections"):
                 table, model = (paper_tags, Tag) if kind == "tags" else (paper_collections, Collection)
                 fk = "tag_id" if kind == "tags" else "collection_id"
@@ -948,7 +980,9 @@ class PeerSync:
                             and winner.value
                             and winner.value.get("digest")
                             and paper
-                            and paper.pdf_sha256 == winner.value.get("pdf_sha256") == job.payload["pdf_sha256"]
+                            and paper.pdf_sha256
+                            == winner.value.get("pdf_sha256")
+                            == job.payload["pdf_sha256"]
                             # materialize_assets points here only after the verified
                             # archive has been installed; an older HTML may still exist.
                             and paper.html_path

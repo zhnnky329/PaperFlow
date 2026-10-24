@@ -20,7 +20,7 @@ export function PeerSettings() {
   useEffect(() => {
     let alive = true;
     const refresh = () => api<SyncStatus>("/sync/status")
-      .then((value) => { if (alive) setStatus(value); })
+      .then((value) => { if (alive) { setStatus(value); setError(""); } })
       .catch(() => { if (alive) setError("无法读取设备同步状态"); });
     void refresh();
     const timer = setInterval(refresh, 5000);
@@ -47,7 +47,6 @@ export function PeerSettings() {
         {status.peer_configured && " 转换时可选择使用 Ubuntu。"}</p>
       {status.last_success && <p>最近同步：{new Date(status.last_success).toLocaleString()}</p>}
       {status.pending_conversions > 0 && <p>待完成的 Ubuntu 转换：{status.pending_conversions}</p>}
-      {(error || status.error) && <p role="alert">{error || status.error}</p>}
       <Button disabled={!status.enabled || busy} onClick={synchronize}>立即同步</Button>
       <details><summary>连接配置</summary>
         <p>在两端 .env 中启用 PAPERFLOW_SYNC_ENABLED，并填写相同的 PAPERFLOW_SYNC_TOKEN。
@@ -56,5 +55,6 @@ export function PeerSettings() {
           保存后重启。完整说明见仓库 docs/PEER_SYNC.md。</p>
       </details>
     </>}
+    {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
   </section>;
 }
